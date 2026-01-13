@@ -35,7 +35,7 @@
 */*/*/*/*/*/bin
 */*/*/*/*/*/*/bin
 .vs/
-addon-modules/
+#addon-modules/
 bin/Debug/*.dll
 bin/*.dll.mdb
 bin/*.db
@@ -120,3 +120,19 @@ doc/doxygen.error.log
 bin/OpenSim.ini
 
 *.patch
+# Build artifacts
+bin/
+obj/
+
+# Runtime junk
+*.core
+screenlog.*
+logger.txt
+*.log
+
+# Local / personal
+.bash_history
+
+# OS / editor
+.DS_Store
+*.swp

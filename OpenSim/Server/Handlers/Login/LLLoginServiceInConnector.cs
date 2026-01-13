@@ -64,13 +64,21 @@ namespace OpenSim.Server.Handlers.Login
         public LLLoginServiceInConnector(IConfigSource config, IHttpServer server, string configName) :
             base(config, server, configName)
         {
+
+		m_log.Debug("[MY DEBUG - LLLOGIN IN CONNECTOR]: Constructor 2 Starting...");
             string loginService = ReadLocalServiceFromConfig(config);
 
             Object[] args = new Object[] { config };
 
             m_LoginService = ServerUtils.LoadPlugin<ILoginService>(loginService, args);
 
+m_log.Info("[MY DEBUG] LLLoginServiceInConnector: About to call InitializeHandlers.");
+
+
             InitializeHandlers(server);
+
+m_log.Info("[MY DEBUG] LLLoginServiceInConnector: Finished calling InitializeHandlers.");
+
         }
 
         public LLLoginServiceInConnector(IConfigSource config, IHttpServer server) :

@@ -72,6 +72,14 @@ namespace OpenSim.Server.Handlers.Login
                     remoteClient = ep;
             }
 
+
+if (requestData!=null)
+{
+	m_log.Info("[MY DEBUG] has request data.");
+} else {
+	m_log.Error("[MY DEBUG] missing request data.");
+}
+
             if (requestData != null)
             {
                 // Debug code to show exactly what login parameters the viewer is sending us.
@@ -130,7 +138,7 @@ namespace OpenSim.Server.Handlers.Login
                     if (requestData.Contains("id0") && requestData["id0"] != null)
                         id0 = requestData["id0"].ToString();
 
-                    //m_log.InfoFormat("[LOGIN]: XMLRPC Login Requested for {0} {1}, starting in {2}, using {3}", first, last, startLocation, clientVersion);
+                    m_log.InfoFormat("[MY DEBUG]: XMLRPC Login Requested for {0} {1}, starting in {2}, using {3}", first, last, startLocation, clientVersion);
 
                     LoginResponse reply = null;
                     reply = m_LocalService.Login(first, last, passwd, startLocation, scopeID, clientVersion, channel, mac, id0, remoteClient);

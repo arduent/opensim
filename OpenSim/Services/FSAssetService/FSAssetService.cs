@@ -64,6 +64,7 @@ namespace OpenSim.Services.FSAssetService
         protected Thread m_WriterThread;
         protected Thread m_StatsThread;
         protected string m_SpoolDirectory;
+        protected int m_WriteSleepMs;
         protected object m_readLock = new object();
         protected object m_statsLock = new object();
         protected int m_readCount = 0;
@@ -155,6 +156,7 @@ namespace OpenSim.Services.FSAssetService
                 throw new Exception(string.Format("Could not find a storage interface in the module {0}", dllName));
 
             // Initialize DB And perform any migrations required
+            m_log.InfoFormat("[FSASSETS]: Connecting to: {0}",connectionString);
             m_DataConnector.Initialise(connectionString, realm, SkipAccessTimeDays);
 
             // Setup Fallback Service
@@ -187,6 +189,9 @@ namespace OpenSim.Services.FSAssetService
                 m_log.ErrorFormat("[FSASSETS]: BaseDirectory not specified");
                 throw new Exception("Configuration error");
             }
+
+            // get write delay default = 1 sec
+            m_WriteSleepMs = assetConfig.GetInt("WriteSleepMs", 1000);
 
             m_useOsgridFormat = assetConfig.GetBoolean("UseOsgridFormat", m_useOsgridFormat);
 
@@ -247,119 +252,85 @@ namespace OpenSim.Services.FSAssetService
             }
         }
 
-        private void Writer()
-        {
-            m_log.InfoFormat("[FSASSETS]: Writer started with spooldir {0} and basedir {1}", m_SpoolDirectory, m_FSBase);
-
-            while (true)
-            {
-                string[] files = Directory.GetFiles(m_SpoolDirectory);
-
-                if (files.Length > 0)
-                {
-                    int tickCount = Environment.TickCount;
-                    for (int i = 0 ; i < files.Length ; i++)
-                    {
-                        string hash = Path.GetFileNameWithoutExtension(files[i]);
-                        string s = HashToFile(hash);
-                        string diskFile = Path.Combine(m_FSBase, s);
-                        bool pathOk = false;
-
-                        // The cure for chicken bones!
-                        while(true)
-                        {
-                            try
-                            {
-                                // Try to make the directory we need for this file
-                                Directory.CreateDirectory(Path.GetDirectoryName(diskFile));
-                                pathOk = true;
-                                break;
-                            }
-                            catch (System.IO.IOException)
-                            {
-                                // Creating the directory failed. This can't happen unless
-                                // a part of the path already exists as a file. Sadly the
-                                // SRAS data contains such files.
-                                string d = Path.GetDirectoryName(diskFile);
-
-                                // Test each path component in turn. If we can successfully
-                                // make a directory, the level below must be the chicken bone.
-                                while (d.Length > 0)
-                                {
-                                    Console.WriteLine(d);
-                                    try
-                                    {
-                                        Directory.CreateDirectory(Path.GetDirectoryName(d));
-                                    }
-                                    catch (System.IO.IOException)
-                                    {
-                                        d = Path.GetDirectoryName(d);
-
-                                        // We failed making the directory and need to
-                                        // go up a bit more
-                                        continue;
-                                    }
-
-                                    // We succeeded in making the directory and (d) is
-                                    // the chicken bone
-                                    break;
-                                }
-
-                                // Is the chicken alive?
-                                if (d.Length > 0)
-                                {
-                                    Console.WriteLine(d);
-
-                                    FileAttributes attr = File.GetAttributes(d);
-
-                                    if ((attr & FileAttributes.Directory) == 0)
-                                    {
-                                        // The chicken bone should be resolved.
-                                        // Return to writing the file.
-                                        File.Delete(d);
-                                        continue;
-                                    }
-                                }
-                            }
-                            // Could not resolve, skipping
-                            m_log.ErrorFormat("[FSASSETS]: Could not resolve path creation error for {0}", diskFile);
-                            break;
-                        }
-
-                        if (pathOk)
-                        {
-                            try
-                            {
-                                byte[] data = File.ReadAllBytes(files[i]);
-
-                                using (GZipStream gz = new GZipStream(new FileStream(diskFile + ".gz", FileMode.Create), CompressionMode.Compress))
-                                {
-                                    gz.Write(data, 0, data.Length);
-                                }
-                                File.Delete(files[i]);
-
-                                //File.Move(files[i], diskFile);
-                            }
-                            catch(System.IO.IOException e)
-                            {
-                                if (e.Message.StartsWith("Win32 IO returned ERROR_ALREADY_EXISTS"))
-                                    File.Delete(files[i]);
-                                else
-                                    throw;
-                            }
-                        }
-                    }
-
-                    int totalTicks = System.Environment.TickCount - tickCount;
-                    if (totalTicks > 0) // Wrap?
-                    {
-                        m_log.InfoFormat("[FSASSETS]: Write cycle complete, {0} files, {1} ticks, avg {2:F2}", files.Length, totalTicks, (double)totalTicks / (double)files.Length);
-                    }
-                }
-
-                Thread.Sleep(1000);
-            }
-        }
+	private void Writer()
+	{
+	    string spoolSubDir = Path.Combine(m_SpoolDirectory, "spool");
+	    m_log.InfoFormat("[FSASSETS]: High-Speed Writer started. Subfolder: {0}", spoolSubDir);
+	
+	    while (true)
+	    {
+	        try
+	        {
+	            // Only look for .asset files in the /spool/ subfolder
+	            string[] files = Directory.GetFiles(spoolSubDir, "*.asset");
+	
+	            if (files.Length > 0)
+	            {
+	                int tickCount = Environment.TickCount;
+	                int batchSize = Math.Min(files.Length, 100); 
+	                
+	                for (int i = 0; i < batchSize; i++)
+	                {
+	                    string currentFile = files[i];
+	                    string hash = Path.GetFileNameWithoutExtension(currentFile);
+	                    string s = HashToFile(hash);
+	                    string diskFile = Path.Combine(m_FSBase, s);
+	                    bool pathOk = false;
+	
+	                    // 1. Ensure Directory Exists
+	                    try
+	                    {
+	                        Directory.CreateDirectory(Path.GetDirectoryName(diskFile));
+	                        pathOk = true;
+	                    }
+	                    catch (Exception ex)
+	                    {
+	                        m_log.ErrorFormat("[FSASSETS]: Failed to create directory for {0}: {1}", diskFile, ex.Message);
+	                    }
+	
+	                    if (pathOk)
+	                    {
+	                        try
+	                        {
+	                            // 2. Read and Compress
+	                            byte[] data = File.ReadAllBytes(currentFile);
+	                            using (FileStream fs = new FileStream(diskFile + ".gz", FileMode.Create, FileAccess.Write, FileShare.None))
+	                            {
+	                                using (GZipStream gz = new GZipStream(fs, CompressionMode.Compress))
+	                                {
+	                                    gz.Write(data, 0, data.Length);
+	                                }
+	                            }
+	
+	                            // 3. CRITICAL: Delete the file from the spool immediately
+	                            File.Delete(currentFile);
+	                        }
+	                        catch (Exception ex)
+	                        {
+	                            // If we can't delete it, we MUST skip it or we loop forever
+	                            m_log.ErrorFormat("[FSASSETS]: Failed to process/delete {0}: {1}", currentFile, ex.Message);
+	                            
+	                            // Rename the file to .failed so the loop stops seeing it as a .asset
+	                            try { File.Move(currentFile, currentFile + ".failed"); } catch {}
+	                        }
+	                    }
+	                }
+	
+	                int totalTicks = Environment.TickCount - tickCount;
+	                //m_log.InfoFormat("[FSASSETS]: Write cycle complete, {0} files processed in {1}ms", batchSize, totalTicks);
+	
+	                // If backlog exists, skip sleep
+	                if (files.Length > batchSize) continue; 
+	            }
+	        }
+	        catch (Exception e)
+	        {
+	            m_log.ErrorFormat("[FSASSETS]: Writer loop catastrophic error: {0}", e.Message);
+	        }
+	
+	        Thread.Sleep(m_WriteSleepMs);
+	    }
+	}
 
         string GetSHA256Hash(byte[] data)
         {
@@ -524,10 +495,9 @@ namespace OpenSim.Services.FSAssetService
             }
             catch (Exception exception)
             {
-                m_log.Error(exception.ToString());
-                Thread.Sleep(5000);
-                Environment.Exit(1);
-                return null;
+		m_log.ErrorFormat("[FSASSETS]: Database connection error during Get: {0}", exception.Message);
+		    // Return null so OpenSim treats it as a 'missing asset' and stays alive
+		return null;
             }
         }
 
@@ -623,87 +593,76 @@ namespace OpenSim.Services.FSAssetService
             return Store(asset, false);
         }
 
-        private string Store(AssetBase asset, bool force)
-        {
-            int tickCount = Environment.TickCount;
-            string hash = GetSHA256Hash(asset.Data);
+	private string Store(AssetBase asset, bool force)
+	{
+	    // Generate the hash (necessary to know if we already have it)
+	    string hash = GetSHA256Hash(asset.Data);
 
-            if (asset.Name.Length > AssetBase.MAX_ASSET_NAME)
-            {
-                string assetName = asset.Name.Substring(0, AssetBase.MAX_ASSET_NAME);
-                m_log.WarnFormat(
-                    "[FSASSETS]: Name '{0}' for asset {1} truncated from {2} to {3} characters on add",
-                    asset.Name, asset.ID, asset.Name.Length, assetName.Length);
-                asset.Name = assetName;
-            }
+	    // Sanitize Metadata (standard OpenSim length checks)
+	    if (asset.Name.Length > AssetBase.MAX_ASSET_NAME)
+	        asset.Name = asset.Name.Substring(0, AssetBase.MAX_ASSET_NAME);
+	    if (asset.Description.Length > AssetBase.MAX_ASSET_DESC)
+	        asset.Description = asset.Description.Substring(0, AssetBase.MAX_ASSET_DESC);
+	
+	    // Handle IDs
+	    if (asset.ID.Length == 0)
+	    {
+	        if (asset.FullID.IsZero()) asset.FullID = UUID.Random();
+	        asset.ID = asset.FullID.ToString();
+	    }
 
-            if (asset.Description.Length > AssetBase.MAX_ASSET_DESC)
-            {
-                string assetDescription = asset.Description.Substring(0, AssetBase.MAX_ASSET_DESC);
-                m_log.WarnFormat(
-                    "[FSASSETS]: Description '{0}' for asset {1} truncated from {2} to {3} characters on add",
-                    asset.Description, asset.ID, asset.Description.Length, assetDescription.Length);
-                asset.Description = assetDescription;
-            }
+            string spoolSubDir = Path.Combine(m_SpoolDirectory, "spool");
+            string tempFile = Path.Combine(spoolSubDir, hash + ".tmp");
+            string finalFile = Path.Combine(spoolSubDir, hash + ".asset");
+	
+	    // FIRE AND FORGET: Save to RAM Spool and return immediately
+	    // if (!AssetExists(hash)) // this hits the disk
+            if (!File.Exists(finalFile)) // hits ram drive
+	    {
 
-            if (!AssetExists(hash))
-            {
-                string tempFile = Path.Combine(Path.Combine(m_SpoolDirectory, "spool"), hash + ".asset");
-                string finalFile = Path.Combine(m_SpoolDirectory, hash + ".asset");
+	        if (!File.Exists(finalFile))
+	        {
+	            // Sanitize XML for objects
+	            if (asset.Type == (int)AssetType.Object && asset.Data != null)
+	            {
+	                string xml = ExternalRepresentationUtils.SanitizeXml(Utils.BytesToString(asset.Data));
+	                asset.Data = Utils.StringToBytes(xml);
+	            }
+	
+	            // Write to RAM disk - very fast
+	            using (FileStream fs = File.Create(tempFile))
+	            {
+	                fs.Write(asset.Data, 0, asset.Data.Length);
+	            }
+	            File.Move(tempFile, finalFile);
+	        }
+	    }
+	
+	    // ASYNC DATABASE: Queue the DB write so we don't block the HTTP response
+	    // We use a background thread to tell the DB about the asset metadata
+/*
+	    System.Threading.Tasks.Task.Run(() => {
+	        try {
+	            m_DataConnector.Store(asset.Metadata, hash);
+	        } catch (Exception e) {
+	            m_log.ErrorFormat("[FSASSETS]: Async DB Write failed for {0}: {1}", asset.ID, e.Message);
+	        }
+	    });
+*/
 
-                if (!File.Exists(finalFile))
-                {
-                    // Deal with bug introduced in Oct. 20 (1eb3e6cc43e2a7b4053bc1185c7c88e22356c5e8)
-                    // Fix bad assets before storing on this server
-                    if (asset.Type == (int)AssetType.Object && asset.Data != null)
-                    {
-                        string xml = ExternalRepresentationUtils.SanitizeXml(Utils.BytesToString(asset.Data));
-                        asset.Data = Utils.StringToBytes(xml);
-                    }
-
-                    FileStream fs = File.Create(tempFile);
-
-                    fs.Write(asset.Data, 0, asset.Data.Length);
-
-                    fs.Close();
-
-                    File.Move(tempFile, finalFile);
-                }
-            }
-
-            if (asset.ID.Length == 0)
-            {
-                if (asset.FullID.IsZero())
-                {
-                    asset.FullID = UUID.Random();
-                }
-                asset.ID = asset.FullID.ToString();
-            }
-            else if (asset.FullID.IsZero())
-            {
-                UUID uuid = UUID.Zero;
-                if (UUID.TryParse(asset.ID, out uuid))
-                {
-                    asset.FullID = uuid;
-                }
-                else
-                {
-                    asset.FullID = UUID.Random();
-                }
-            }
-
-            if (!m_DataConnector.Store(asset.Metadata, hash))
-            {
-                if (asset.Metadata.Type == -2)
-                    return asset.ID;
-
-                return UUID.Zero.ToString();
-            }
-            else
-            {
-                return asset.ID;
-            }
-        }
+// DATABASE WRITE: Removed Task.Run to prevent thread pool exhaustion/flood at startup
+try 
+{
+    m_DataConnector.Store(asset.Metadata, hash);
+} 
+catch (Exception e) 
+{
+    m_log.ErrorFormat("[FSASSETS]: Database write failed for {0}: {1}", asset.ID, e.Message);
+}
+	
+	    // IMMEDIATELY return the ID to the remote grid
+	    return asset.ID;
+	}
 
         public bool UpdateContent(string id, byte[] data)
         {

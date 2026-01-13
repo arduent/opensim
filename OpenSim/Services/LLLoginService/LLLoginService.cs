@@ -217,6 +217,17 @@ namespace OpenSim.Services.LLLoginService
 
             object[] args = [config];
             m_UserAccountService = ServerUtils.LoadPlugin<IUserAccountService>(accountService, args);
+
+
+    if (m_UserAccountService == null)
+    {
+        m_log.Error("[MY DEBUG] UserAccountService is NULL!");
+    }
+    else
+    {
+        m_log.Info("[MY DEBUG] Successfully got UserAccountService!");
+    }
+
             m_GridUserService = ServerUtils.LoadPlugin<IGridUserService>(gridUserService, args);
             object[] authArgs = new object[] { config, m_UserAccountService };
             m_AuthenticationService = ServerUtils.LoadPlugin<IAuthenticationService>(authService, authArgs);

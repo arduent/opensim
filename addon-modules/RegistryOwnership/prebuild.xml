@@ -1,0 +1,27 @@
+<Project name="RegionOwnershipModule" path="addon-modules/RegionOwnershipModule" type="Library" version="0.5.0-$Rev$" frameworkVersion="net8_0">
+     <Configuration name="Debug">
+       <Options>
+         <OutputPath>../../bin/</OutputPath>
+       </Options>
+     </Configuration>
+     <Configuration name="Release">
+       <Options>
+         <OutputPath>../../bin/</OutputPath>
+       </Options>
+     </Configuration>
+
+      <ReferencePath>../../bin/</ReferencePath>
+      <Reference name="log4net" path="../../bin/"/>
+      <Reference name="OpenMetaverse" path="../../bin/"/>
+      <Reference name="OpenMetaverseTypes" path="../../bin/"/>
+      <Reference name="OpenMetaverse.StructuredData" path ="../../../bin"/>
+      <Reference name="OpenSim.Framework"/>
+      <Reference name="OpenSim.Services.Base"/>
+      <Reference name="OpenSim.Services.Interfaces"/>
+      <Reference name="OpenSim.Region.Framework"/>
+     <Files>
+       <Match pattern="*.cs" recurse="true">
+        <Exclude name="obj" pattern="obj"/>
+       </Match>
+     </Files>
+  </Project>
