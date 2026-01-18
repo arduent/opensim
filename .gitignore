@@ -29,6 +29,27 @@ compile.sh
 ncheck.sh
 fonts.txt
 
+
+
+# User / machine state
+.cache/
+.local/
+.nuget/
+.dotnet/
+
+# .NET build artifacts
+**/bin/
+**/obj/
+
+# Certificates / keys
+*.pfx
+*.pem
+*.key
+
+# Telemetry / logs
+*.trn
+
+
 # Ignore .user and .suo files as these are user preference specific
 # http://stackoverflow.com/questions/72298/should-i-add-the-visual-studio-suo-and-user-files-to-source-control
 *.suo

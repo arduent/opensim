@@ -1757,27 +1757,35 @@ namespace Gloebit.GloebitMoneyModule
                     break;
                 case TransactionType.USER_PAYS_OBJECT:
                     // 5008 - OnMoneyTransfer - Pay Object
-                    // need to alert the object that it has been paid.
+                    // Alert the object that it has been paid.
                     ObjectPaid handleObjectPaid = OnObjectPaid;
-                    if (handleObjectPaid != null) {
-                        SceneObjectPart prim = findPrim(txn.PartID);
-                        if (prim.payeeList.Contains(txn.PayerID) || prim.payeeList.Count == 0)
-                            handleObjectPaid(txn.PartID, txn.PayerID, txn.Amount);
-                        else
-                        {
-                            m_log.ErrorFormat("[GLOEBITMONEYMODULE].processAssetEnactHold - Payer not in object allowed payer list");
-                            returnMsg = String.Format("Asset enact failed: Payer not in object allowed payer list");
-                            return false;
-                        }
-                        // This doesn't provide a return or ability to query state, so we assume success
-                    } else {
-                        // This really shouldn't happen, as it would mean that the OpenSim region is not properly set up
-                        // However, we won't fail here as expectation is unclear
-                        // We have received this when a sim has another active money module which didn't respect the config and tried to enable on
-                        // this region as well and it received the objectPaid event registration instead of the GMM.
-                        m_log.ErrorFormat("[GLOEBITMONEYMODULE].processAssetEnactHold - IMoneyModule OnObjectPaid event not properly subscribed.  Object payment may have failed.");
+                    if (handleObjectPaid != null)
+                    {
+                       SceneObjectPart prim = findPrim(txn.PartID);
+
+                       // Determine allowed payees (legacy OpenSim) or owner (modern OpenSim)
+                       var payees = OpenSimCompat.GetPayees(prim);
+
+                       // If a legacy allowed-payer list exists, enforce it
+                       if (payees.Count > 0 && !payees.Contains(txn.PayerID))
+                       {
+                           m_log.ErrorFormat(
+                               "[GLOEBITMONEYMODULE] processAssetEnactHold - Payer not allowed"
+                       );
+                       returnMsg = "Asset enact failed: payer not allowed";
+                       return false;
                     }
-                    break;
+
+                    // Notify object of successful payment
+                    handleObjectPaid(txn.PartID, txn.PayerID, txn.Amount);
+                  }
+                  else
+                  {
+                    m_log.ErrorFormat(
+                      "[GLOEBITMONEYMODULE].processAssetEnactHold - IMoneyModule OnObjectPaid event not properly subscribed. Object payment may have failed."
+                    );
+                  }
+                  break;
                 case TransactionType.OBJECT_PAYS_USER:
                     // 5009 - ObjectGiveMoney
                     // nothing to enact.
