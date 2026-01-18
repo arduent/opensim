@@ -16,6 +16,19 @@
 *.bak
 *.lnk
 
+# Local/user cruft
+.lesshst
+.selected_editor
+.ssh/
+VERSION
+o.loh
+
+# Local scripts in this working tree
+check.sh
+compile.sh
+ncheck.sh
+fonts.txt
+
 # Ignore .user and .suo files as these are user preference specific
 # http://stackoverflow.com/questions/72298/should-i-add-the-visual-studio-suo-and-user-files-to-source-control
 *.suo
