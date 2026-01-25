@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Prebuild xmlns="http://dgrid.org/schemas/prebuild-1.7.xsd" version="1.7">
+  <Solution name="OpenSim" version="0.9.3.1">
+    <Project name="OpenSim.Region.Modules.ParentalControls" 
+             path="addon-modules/ParentalControls" 
+             type="Library" 
+             frameworkVersion="v4_8">
+      
+      <ReferencePath>../../bin/</ReferencePath>
+      <Reference name="System" />
+      <Reference name="System.Core" />
+      <Reference name="System.Data" />
+      <Reference name="System.Xml" />
+      <Reference name="System.Net" />
+      <Reference name="System.Net.Http" />
+      <Reference name="log4net" />
+      <Reference name="Nini" />
+      <Reference name="OpenMetaverse" />
+      <Reference name="OpenMetaverseTypes" />
+      <Reference name="OpenSim.Framework" />
+      <Reference name="OpenSim.Region.Framework" />
+      <Reference name="MySql.Data" />
+
+      <Files>
+        <Match pattern="*.cs" recurse="true"/>
+      </Files>
+    </Project>
+  </Solution>
+</Prebuild>
+
