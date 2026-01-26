@@ -27,6 +27,7 @@ namespace OpenSim.Region.Modules.ParentalControl
         private string m_connectionString;
         private bool m_enabled = false;
         private int m_adminPort = 9100;
+        private string m_listenerIP = "10.99.0.1";
         private bool m_blockTeleports = false;
         private bool m_parentBypass = true;
 
@@ -48,6 +49,7 @@ namespace OpenSim.Region.Modules.ParentalControl
             }
 
             m_enabled = true;
+            m_listenerIP = config.GetString("ListenerIP", "10.99.0.1");
             m_adminPort = config.GetInt("AdminPort", 9100);
             m_blockTeleports = config.GetBoolean("BlockAllTeleports", false);
             m_parentBypass = config.GetBoolean("AllowParentBypass", true);
@@ -223,7 +225,7 @@ namespace OpenSim.Region.Modules.ParentalControl
         {
             try {
                 m_httpListener = new HttpListener();
-                m_httpListener.Prefixes.Add(string.Format("http://localhost:{0}/flush/", m_adminPort));
+                m_httpListener.Prefixes.Add(string.Format("http://{0}:{1}/flush/", m_listenerIP, m_adminPort));
                 m_httpListener.Start();
                 m_httpListener.BeginGetContext(OnHttpRequest, m_httpListener);
                 m_log.InfoFormat("[PARENTAL] Admin listener active on port {0}", m_adminPort);

@@ -2,8 +2,10 @@
 [ParentalControls]
     Enabled = true
 
-    ;; Port for the PHP Admin panel to signal cache flushes
+    ;; IP/Port for the PHP Admin panel to signal cache flushes
     ;; Ensure this port is open in your local firewall for 127.0.0.1
+
+    ListenerIP = 10.99.0.1
     AdminPort = 9100
 
     ;; If true, restricted accounts cannot teleport out of the region
