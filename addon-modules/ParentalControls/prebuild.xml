@@ -2,17 +2,17 @@
 <Prebuild xmlns="http://dgrid.org/schemas/prebuild-1.7.xsd" version="1.7">
   <Solution name="OpenSim" version="0.9.3.1">
     <Project name="OpenSim.Region.Modules.ParentalControls" 
-             path="addon-modules/ParentalControls" 
+             path="." 
              type="Library" 
-             frameworkVersion="v4_8">
+             frameworkVersion="net8.0">
       
       <ReferencePath>../../bin/</ReferencePath>
       <Reference name="System" />
       <Reference name="System.Core" />
       <Reference name="System.Data" />
       <Reference name="System.Xml" />
-      <Reference name="System.Net" />
       <Reference name="System.Net.Http" />
+      <Reference name="System.Net.Primitives" />
       <Reference name="log4net" />
       <Reference name="Nini" />
       <Reference name="OpenMetaverse" />
