@@ -61,8 +61,8 @@ namespace OpenSim.Region.Modules.ParentalControl
         public void AddRegion(Scene scene)
         {
             if (!m_enabled) return;
-            m_log.InfoFormat("[PARENTAL] Monitoring Region: {0}", scene.RegionInfo.RegionName);
-            scene.EventManager.OnNewClient += OnNewClient;
+            scene.EventManager.OnIncomingInstantMessage += HandleIncomingIM;
+            m_log.WarnFormat("[PARENTAL] AUDIT: Hooked Scene Pipeline for {0}", scene.RegionInfo.RegionName);
         }
 
         public void RemoveRegion(Scene scene)
@@ -74,19 +74,52 @@ namespace OpenSim.Region.Modules.ParentalControl
         public void RegionLoaded(Scene scene) { }
         public void Close() { if (m_httpListener != null) m_httpListener.Stop(); }
 
-        private void OnNewClient(IClientAPI client)
+
+
+private void OnNewClient(IClientAPI client)
+{
+    UpdateCacheForUser(client.AgentId);
+    // client.OnInstantMessage is removed here if you use the Scene Hook below
+    client.OnSetStartLocationRequest += HandleSetHome; 
+}
+
+// This is the Scene-level handler that replaces HandleInstantMessage
+private void HandleIncomingIM(GridInstantMessage im)
+{
+    UUID senderID = new UUID(im.fromAgentID);
+    UUID recipientID = new UUID(im.toAgentID);
+
+    // Audit everything as WARN so it always hits the log
+    m_log.WarnFormat("[PARENTAL AUDIT] IM: {0} ({1}) -> {2}", im.fromAgentName, senderID, recipientID);
+
+    // If we need to send an alert to the SENDER, we find them in the scene
+    // This is how we avoid the "client does not exist" error
+    foreach (Scene scene in SceneManager.Instance.Scenes)
+    {
+        if (scene.TryGetClient(senderID, out IClientAPI senderClient))
         {
-            UpdateCacheForUser(client.AgentId);
-
-            client.OnInstantMessage += HandleInstantMessage;
-            client.OnSetStartLocationRequest += HandleSetHome;
-            client.OnLogout += (c) => { m_restrictedCache.TryRemove(c.AgentId, out _); };
+            // Now you have 'senderClient' to send alerts if needed
+            // senderClient.SendAgentAlertMessage("Blocked!", false);
+            break;
         }
+    }
+}
 
+// Helper to find the right scene for a specific agent
+private Scene GetSceneByUUID(UUID agentID)
+{
+    // Since this is a Shared Module, we have to find which region the user is currently in
+    // This is a standard OpenSim way to resolve a scene
+    return SceneManager.Instance.Scenes.Find(s => s.Entities.ContainsKey(agentID));
+}
+
+/*
         private void HandleInstantMessage(IClientAPI client, GridInstantMessage im)
         {
             UUID senderID = new UUID(im.fromAgentID);
             UUID recipientID = new UUID(im.toAgentID);
+
+            m_log.WarnFormat("[PARENTAL AUDIT] Pipeline Intercept: {0} -> {1}", im.fromAgentID, im.toAgentID);
 
             // 1. BLOCK FRIEND REQUESTS (Dialog 38)
             // This replaces the OnAddFriend hook that was failing to compile.
@@ -94,6 +127,7 @@ namespace OpenSim.Region.Modules.ParentalControl
             {
                 if (IsRestricted(senderID, out _) || IsRestricted(recipientID, out _))
                 {
+                    m_log.WarnFormat("[PARENTAL] Blocked Incoming Instant Message Attempt: {0} ({1}) contacted {1}", senderID, im.fromAgentName, recipientID);
                     client.SendAgentAlertMessage("Parental Controls: Friend requests must be handled via the web portal.", false);
                     return; // Drop the friendship offer
                 }
@@ -110,11 +144,14 @@ namespace OpenSim.Region.Modules.ParentalControl
             {
                 if (!IsFriend(senderID, recipientID))
                 {
+                    m_log.WarnFormat("[PARENTAL] Blocked Outgoing Instant Message Attempt: {0} contacted {1}", senderID, recipientID);
                     client.SendAgentAlertMessage("Parental Controls: Approved friends only.", false);
                     return;
                 }
             }
         }
+
+*/
         private void HandleSetHome(IClientAPI client, ulong regionHandle, Vector3 pos, Vector3 lookAt, uint locationID)
         {
             if (IsRestricted(client.AgentId, out _))
@@ -175,6 +212,8 @@ namespace OpenSim.Region.Modules.ParentalControl
             try {
                 var context = m_httpListener.EndGetContext(result);
                 string target = context.Request.QueryString["uuid"];
+
+		m_log.WarnFormat("[PARENTAL] received Flush request: uuid {1}", target);
                 if (!string.IsNullOrEmpty(target)) UpdateCacheForUser(new UUID(target));
                 context.Response.Close();
                 m_httpListener.BeginGetContext(OnHttpRequest, m_httpListener);
