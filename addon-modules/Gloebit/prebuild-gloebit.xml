@@ -8,8 +8,14 @@
   <Configuration name="Release">
     <Options>
       <OutputPath>../../../bin/</OutputPath>
+      <SuppressWarnings>2002</SuppressWarnings>
     </Options>
   </Configuration>
+
+<PropertyGroup>
+  <TargetFramework>net8.0</TargetFramework>
+  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+</PropertyGroup>
  
   <ReferencePath>../../../bin/</ReferencePath>
   <Reference name="OpenMetaverseTypes" path="../../../bin/"/>
