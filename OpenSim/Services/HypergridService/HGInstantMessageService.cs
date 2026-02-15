@@ -27,6 +27,10 @@
 
 using System;
 using System.Reflection;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 using OpenSim.Framework;
 using OpenSim.Services.Interfaces;
@@ -61,6 +65,14 @@ namespace OpenSim.Services.HypergridService
         private static bool m_ForwardOfflineGroupMessages;
         private static bool m_InGatekeeper;
         private string m_messageKey;
+
+        // === HOLONEON MATRIX BRIDGE BEGIN ===
+        private static bool m_HoloMatrixEnabled = false;
+        private static string m_HoloMatrixUrl = string.Empty;
+        private static string m_HoloMatrixSecret = string.Empty;
+        private static readonly HttpClient m_HoloHttp = new HttpClient();
+        // === HOLONEON MATRIX BRIDGE END ===
+        
 
         public HGInstantMessageService(IConfigSource config) : this(config, null)
         {
@@ -129,6 +141,20 @@ namespace OpenSim.Services.HypergridService
                 m_messageKey = cnf.GetString("MessageKey", string.Empty);
                 m_ForwardOfflineGroupMessages = cnf.GetBoolean("ForwardOfflineGroupMessages", false);
 
+                // === HOLONEON MATRIX BRIDGE BEGIN ===
+                IConfig holo = config.Configs["MatrixBridge"];
+                if (holo != null)
+                {
+                    m_HoloMatrixEnabled = holo.GetBoolean("Enabled", false);
+                    m_HoloMatrixUrl = holo.GetString("BridgeUrl", "");
+                    m_HoloMatrixSecret = holo.GetString("SharedSecret", "");
+                
+                    if (m_HoloMatrixEnabled)
+                        m_log.InfoFormat("[HG IM SERVICE]: Holoneon MatrixBridge enabled -> {0}", m_HoloMatrixUrl);
+                }
+
+                // === HOLONEON MATRIX BRIDGE END ===
+
                 if (m_InGatekeeper)
                 {
                     m_log.Debug("[HG IM SERVICE]: Starting In Robust GateKeeper");
@@ -142,10 +168,78 @@ namespace OpenSim.Services.HypergridService
             }
         }
 
+        // === HOLONEON MATRIX BRIDGE BEGIN ===
+        private static void TryMatrixBridgeTap(GridInstantMessage im)
+        {
+            if (!m_HoloMatrixEnabled || string.IsNullOrEmpty(m_HoloMatrixUrl))
+                return;
+        
+            // Only group chat (safe initial filter)
+            if (!im.fromGroup)
+                return;
+        
+            if (im.dialog != (byte)InstantMessageDialog.SessionSend)
+                return;
+
+            // Avoid echo-chamber dup messages
+            if (im.binaryBucket != null)
+            {
+                string bucket = Utils.BytesToString(im.binaryBucket);
+            
+                if (bucket == "Matrix Bridge")
+                {
+                    m_log.Debug("[MatrixBridge] Skipping Matrix-originated message.");
+                    return;
+                }
+            }
+            
+            var payload = new
+            {
+                type = "group_message",
+                group_uuid = im.imSessionID.ToString(),
+                from_uuid = im.fromAgentID.ToString(),
+                from_name = im.fromAgentName,
+                message = im.message,
+                dialog = im.dialog,
+                ts_unix = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            };
+        
+            var json = System.Text.Json.JsonSerializer.Serialize(payload);
+            var req = new System.Net.Http.HttpRequestMessage(
+                System.Net.Http.HttpMethod.Post,
+                m_HoloMatrixUrl);
+        
+            req.Content = new System.Net.Http.StringContent(
+                json,
+                System.Text.Encoding.UTF8,
+                "application/json");
+        
+            if (!string.IsNullOrEmpty(m_HoloMatrixSecret))
+                req.Headers.Add("X-Bridge-Secret", m_HoloMatrixSecret);
+        
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try { await m_HoloHttp.SendAsync(req); }
+                catch { }
+            });
+        }
+        // === HOLONEON MATRIX BRIDGE END ===
+
         public bool IncomingInstantMessage(GridInstantMessage im)
         {
             //m_log.DebugFormat("[HG IM SERVICE]: Received message from {0} to {1}", im.fromAgentID, im.toAgentID);
             //UUID toAgentID = new UUID(im.toAgentID);
+
+	    m_log.InfoFormat("[HOLO DEBUG] dialog={0} fromGroup={1} session={2} from={3} msg={4}",
+                im.dialog,
+                im.fromGroup,
+                im.imSessionID,
+                im.fromAgentName,
+                im.message);
+
+            // === HOLONEON MATRIX BRIDGE BEGIN ===
+            TryMatrixBridgeTap(im);
+            // === HOLONEON MATRIX BRIDGE END ===
 
             bool success = false;
             if (m_IMSimConnector != null)

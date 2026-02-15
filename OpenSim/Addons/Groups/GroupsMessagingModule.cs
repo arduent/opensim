@@ -29,6 +29,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
 using log4net;
 using Mono.Addins;
 using Nini.Config;
@@ -58,6 +63,13 @@ namespace OpenSim.Groups
         // Config Options
         private bool m_groupMessagingEnabled;
         private bool m_debugEnabled;
+
+        // === HOLO MATRIX BRIDGE BEGIN ===
+        private static bool m_HoloMatrixEnabled = false;
+        private static string m_HoloMatrixUrl = string.Empty;
+        private static string m_HoloMatrixSecret = string.Empty;
+        private static readonly HttpClient m_HoloHttp = new HttpClient();
+        // === HOLO MATRIX BRIDGE END ===
 
         /// <summary>
         /// If enabled, module only tries to send group IMs to online users by querying cached presence information.
@@ -125,6 +137,35 @@ namespace OpenSim.Groups
             m_log.InfoFormat(
                 "[Groups.Messaging]: GroupsMessagingModule enabled with MessageOnlineOnly = {0}, DebugEnabled = {1}",
                 m_messageOnlineAgentsOnly, m_debugEnabled);
+
+            // === HOLO MATRIX BRIDGE BEGIN ===
+            IConfig mb = config.Configs["MatrixBridge"];
+            if (mb != null)
+            {
+                m_HoloMatrixEnabled = mb.GetBoolean("Enabled", false);
+                m_HoloMatrixUrl = mb.GetString("BridgeUrl", "");
+                m_HoloMatrixSecret = mb.GetString("SharedSecret", "");
+                int timeoutMs = mb.GetInt("TimeoutMs", 1500);
+            
+                if (m_HoloMatrixEnabled && !string.IsNullOrEmpty(m_HoloMatrixUrl))
+                {
+                    m_HoloHttp.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+            
+                    m_log.InfoFormat(
+                        "[Groups.Messaging][HOLO] MatrixBridge ENABLED → {0}",
+                        m_HoloMatrixUrl);
+                }
+                else
+                {
+                    m_log.Info("[Groups.Messaging][HOLO] MatrixBridge DISABLED");
+                }
+            }
+            else
+            {
+                m_log.Info("[Groups.Messaging][HOLO] MatrixBridge config section not found");
+            }
+            // === HOLO MATRIX BRIDGE END ===
+            
         }
 
         public void AddRegion(Scene scene)
@@ -235,6 +276,71 @@ namespace OpenSim.Groups
 
         #endregion
 
+        // === HOLO MATRIX BRIDGE BEGIN ===
+
+        private static string Bytes256ToString(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+                return string.Empty;
+        
+            // binaryBucket is usually a 256-byte null-padded UTF-8 string
+            // (created by Util.StringToBytes256)
+            return Encoding.UTF8.GetString(bytes).TrimEnd('\0').Trim();
+        }
+
+        private static void TryMatrixBridgeTap(UUID groupID, GridInstantMessage im, byte[] groupNameBucket)
+        {
+            try
+            {
+                if (!m_HoloMatrixEnabled || string.IsNullOrEmpty(m_HoloMatrixUrl))
+                    return;
+        
+                // start narrow: only actual chat messages
+                // (not notices, invites, inventory offers, etc.)
+                if (im.dialog != (byte)InstantMessageDialog.SessionSend)
+                    return;
+        
+                string groupName = string.Empty;
+                try
+                {
+                    if (groupNameBucket != null && groupNameBucket.Length > 0)
+                        groupName = Bytes256ToString(groupNameBucket);
+                }
+                catch { /* ignore */ }
+        
+                var payload = new
+                {
+                    type = "group_message",
+                    group_uuid = groupID.ToString(),
+                    group_name = groupName,
+                    from_uuid = im.fromAgentID.ToString(),
+                    from_name = im.fromAgentName,
+                    message = im.message,
+                    dialog = im.dialog,
+                    ts_unix = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                };
+        
+                var json = JsonSerializer.Serialize(payload);
+        
+                var req = new HttpRequestMessage(HttpMethod.Post, m_HoloMatrixUrl);
+                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        
+                if (!string.IsNullOrEmpty(m_HoloMatrixSecret))
+                    req.Headers.Add("X-Bridge-Secret", m_HoloMatrixSecret);
+        
+                _ = Task.Run(async () =>
+                {
+                    try { using var resp = await m_HoloHttp.SendAsync(req); }
+                    catch { /* swallow, never block group chat */ }
+                });
+            }
+            catch
+            {
+                // swallow, never block group chat
+            }
+        }
+        // === HOLO MATRIX BRIDGE END ===
+
         private void HandleDebugGroupsMessagingVerbose(object modules, string[] args)
         {
             if (args.Length < 5)
@@ -278,6 +384,11 @@ namespace OpenSim.Groups
         public void SendMessageToGroup(GridInstantMessage im, UUID groupID)
         {
             SendMessageToGroup(im, groupID, UUID.Zero, null);
+
+            // === HOLO MATRIX BRIDGE BEGIN ===
+            TryMatrixBridgeTap(groupID, im, im.binaryBucket);
+            // === HOLO MATRIX BRIDGE END ===
+
         }
 
         public void SendMessageToGroup(

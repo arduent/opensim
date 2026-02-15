@@ -44,6 +44,7 @@ using System.Collections.Generic;
 using MySql.Data.MySqlClient;
 using Nini.Config;
 using OpenSim.Framework;
+using OpenSim.Server.Base;
 using OpenSim.Services.Interfaces;
 using OpenMetaverse;
 using log4net;
@@ -57,15 +58,26 @@ namespace OpenSim.Services.ParentalControls
         private readonly IOfflineIMService m_inner;
         private readonly string m_connectionString;
 
-        public ParentalOfflineIMService(IOfflineIMService inner, IConfigSource config)
+        public ParentalOfflineIMService(IConfigSource config)
         {
-            m_inner = inner;
-
             IConfig db = config.Configs["DatabaseService"];
             if (db == null)
                 throw new Exception("[PARENTAL] DatabaseService config missing");
-
+        
             m_connectionString = db.GetString("ConnectionString");
+        
+            IConfig cnf = config.Configs["Messaging"];
+            if (cnf == null)
+                throw new Exception("[PARENTAL] Messaging config missing");
+        
+            string offlineIMService = cnf.GetString("OfflineIMService");
+            if (string.IsNullOrEmpty(offlineIMService))
+                throw new Exception("[PARENTAL] OfflineIMService not configured");
+        
+            m_inner = ServerUtils.LoadPlugin<IOfflineIMService>(
+                offlineIMService,
+                new object[] { config }
+            );
         }
 
         public bool StoreMessage(GridInstantMessage im, out string reason)
