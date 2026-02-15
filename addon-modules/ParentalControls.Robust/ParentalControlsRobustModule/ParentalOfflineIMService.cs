@@ -1,45 +1,5 @@
-/*
- * ParentalControlsModule
- * for OpenSimulator 0.9.3.1
- * Copyright 2026 by Fiona Sweet <fiona@pobox.holoneon.com>
- * VERSION $0.1.20260128-01$
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *
- * Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
-
-
-/*
- * Robust.HG.ini modifications:
- * [Messaging]
- *   OfflineIMService = ParentalControlsRobust.dll:ParentalOfflineIMService
- *
- * [Groups]
- *   OfflineIMService = ParentalControlsRobust.dll:ParentalOfflineIMService
- */
-
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using MySql.Data.MySqlClient;
 using Nini.Config;
@@ -53,31 +13,35 @@ namespace OpenSim.Services.ParentalControls
 {
     public class ParentalOfflineIMService : IOfflineIMService
     {
-        private static readonly ILog m_log = LogManager.GetLogger("ParentalOfflineIMService");
+        private static readonly ILog m_log =
+            LogManager.GetLogger("ParentalOfflineIMService");
 
         private readonly IOfflineIMService m_inner;
         private readonly string m_connectionString;
+
+        // Cache: UUID -> (restricted, expiration time)
+        private readonly ConcurrentDictionary<UUID, (bool restricted, DateTime expires)>
+            _restrictionCache = new();
+
+        private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(60);
 
         public ParentalOfflineIMService(IConfigSource config)
         {
             IConfig db = config.Configs["DatabaseService"];
             if (db == null)
                 throw new Exception("[PARENTAL] DatabaseService config missing");
-        
+
             m_connectionString = db.GetString("ConnectionString");
-        
-            IConfig cnf = config.Configs["Messaging"];
-            if (cnf == null)
-                throw new Exception("[PARENTAL] Messaging config missing");
-        
-            string offlineIMService = cnf.GetString("OfflineIMService");
-            if (string.IsNullOrEmpty(offlineIMService))
-                throw new Exception("[PARENTAL] OfflineIMService not configured");
-        
+
+            // IMPORTANT:
+            // Explicitly load the ORIGINAL OfflineIMService
+            // Do NOT load whatever is configured in [Messaging]
             m_inner = ServerUtils.LoadPlugin<IOfflineIMService>(
-                offlineIMService,
+                "OpenSim.Addons.OfflineIM.dll:OfflineIMService",
                 new object[] { config }
             );
+
+            m_log.Info("[PARENTAL][ROBUST] ParentalOfflineIMService initialized.");
         }
 
         public bool StoreMessage(GridInstantMessage im, out string reason)
@@ -88,7 +52,10 @@ namespace OpenSim.Services.ParentalControls
 
             if (IsProtectedChild(recipient))
             {
-                m_log.WarnFormat("[PARENTAL][ROBUST] BLOCKED OFFLINE IM {0} -> {1}", im.fromAgentID, im.toAgentID);
+                m_log.WarnFormat(
+                    "[PARENTAL][ROBUST] BLOCKED OFFLINE IM {0} -> {1}",
+                    im.fromAgentID, im.toAgentID);
+
                 reason = "Parental Controls: Offline messages are disabled for this account.";
                 return false;
             }
@@ -96,22 +63,50 @@ namespace OpenSim.Services.ParentalControls
             return m_inner.StoreMessage(im, out reason);
         }
 
-        public List<GridInstantMessage> GetMessages(UUID principalID) => m_inner.GetMessages(principalID);
+        public List<GridInstantMessage> GetMessages(UUID principalID)
+            => m_inner.GetMessages(principalID);
 
-        public void DeleteMessages(UUID principalID) => m_inner.DeleteMessages(principalID);
+        public void DeleteMessages(UUID principalID)
+            => m_inner.DeleteMessages(principalID);
 
         private bool IsProtectedChild(UUID childID)
         {
-            using var conn = new MySqlConnection(m_connectionString);
-            conn.Open();
+            // Check cache first
+            if (_restrictionCache.TryGetValue(childID, out var entry))
+            {
+                if (DateTime.UtcNow < entry.expires)
+                    return entry.restricted;
+            }
 
-            using var cmd = new MySqlCommand(
-                "SELECT COUNT(*) FROM parental_links WHERE ChildID=@c AND IsRestricted=1",
-                conn
-            );
+            bool restricted = false;
 
-            cmd.Parameters.AddWithValue("@c", childID.ToString());
-            return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+            try
+            {
+                using var conn = new MySqlConnection(m_connectionString);
+                conn.Open();
+
+                using var cmd = new MySqlCommand(
+                    "SELECT 1 FROM parental_links " +
+                    "WHERE ChildID=@c AND IsRestricted=1 LIMIT 1",
+                    conn);
+
+                cmd.Parameters.AddWithValue("@c", childID.ToString());
+
+                using var reader = cmd.ExecuteReader();
+                restricted = reader.Read();
+            }
+            catch (Exception ex)
+            {
+                m_log.ErrorFormat(
+                    "[PARENTAL][ROBUST] DB error while checking restriction: {0}",
+                    ex.Message);
+            }
+
+            // Update cache
+            _restrictionCache[childID] =
+                (restricted, DateTime.UtcNow.Add(CacheDuration));
+
+            return restricted;
         }
     }
 }

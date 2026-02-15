@@ -129,11 +129,6 @@ namespace OpenSim.ApplicationPlugins.LoadRegions
 
             List<IScene> createdScenes = new List<IScene>();
 
-            // load in bursts so we don't kill database and cpu (regions and scenes)
-            int burstSize = 8;           // # of regions per burst
-            int delayMs = 4000;          // pause between bursts for cool-down
-            int counter = 0;
-
             for (int i = 0; i < regionsToLoad.Length; i++)
             {
                 IScene scene;
@@ -149,19 +144,7 @@ namespace OpenSim.ApplicationPlugins.LoadRegions
                 if (changed)
                     m_openSim.EstateDataService.StoreEstateSettings(regionsToLoad[i].EstateSettings);
 
-                counter++;
-
-                if (burstSize > 0 && counter % burstSize == 0)
-                {
-                    m_log.InfoFormat(
-                        "[LOAD REGIONS PLUGIN]: Burst pause after {0} regions...",
-                        counter);
-            
-                    System.Threading.Thread.Sleep(delayMs);
-                }
             }
-
-            counter = 0;
 
             foreach (IScene scene in createdScenes)
             {
@@ -171,17 +154,6 @@ namespace OpenSim.ApplicationPlugins.LoadRegions
                 if (m_newRegionCreatedHandler != null)
                 {
                     m_newRegionCreatedHandler(scene);
-
-                    counter++;
-
-                    if (burstSize > 0 && counter % burstSize == 0)
-                    {
-                        m_log.InfoFormat(
-                            "[LOAD REGIONS PLUGIN]: Start burst pause after {0} regions...",
-                            counter);
-                
-                        System.Threading.Thread.Sleep(delayMs);
-                    }
                 }
             }
         }
