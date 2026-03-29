@@ -281,9 +281,21 @@ namespace OpenSim.Framework
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static byte[] UTF8Getbytes(string s, int len)
+        {
+            return UTF8.GetBytes(s, 0, len);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static byte[] UTF8NBGetbytes(string s)
         {
             return UTF8NoBomEncoding.GetBytes(s);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static byte[] UTF8NBGetbytes(string s, int len)
+        {
+            return UTF8NoBomEncoding.GetBytes(s, 0 , len);
         }
 
         /// <value>
@@ -1380,6 +1392,34 @@ namespace OpenSim.Framework
         {
             byte[] ret = SHA1.HashData(src);
             UUID uuid = new(ret, 2);
+            uuid.c &= 0x0fff;
+            uuid.c |= 0x5000;
+            uuid.d &= 0x3f;
+            uuid.d |= 0x80;
+            return uuid;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static UUID ComputeShake128UUID(string src)
+        {
+            return ComputeShake128UUID(Encoding.ASCII.GetBytes(src));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static UUID ComputeShake128UUID(ReadOnlySpan<byte> src)
+        {
+            byte[] ret;
+            UUID uuid;
+            if(Shake128.IsSupported)
+            {
+                ret = Shake128.HashData(src, 16);
+                uuid = new(ret, 0);
+            }
+            else
+            { 
+                ret = SHA1.HashData(src);
+                uuid = new(ret, 2);
+            }
             uuid.c &= 0x0fff;
             uuid.c |= 0x5000;
             uuid.d &= 0x3f;
