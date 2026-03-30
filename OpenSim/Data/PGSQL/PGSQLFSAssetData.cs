@@ -205,18 +205,17 @@ namespace OpenSim.Data.PGSQL
                 string query;
                 if (existingAsset == null)
                 {
-                    // Full Insert for new assets
+
                     query = String.Format(
-                        "INSERT INTO {0} (\"id\", \"type\", \"hash\", \"ipfs_cid\", \"asset_flags\", \"create_time\", \"access_time\") " +
-                        "VALUES (:id, :type, :hash, :cid, :asset_flags, :create_time, :access_time)", 
+                        "INSERT INTO {0} (\"id\", \"type\", \"hash\", \"ipfs_cid\", \"asset_flags\", \"create_time\", \"access_time\", \"name\", \"description\") " +
+                        "VALUES (:id::uuid, :type, :hash, :cid, :asset_flags, :create_time, :access_time, :name, :description)",
                         m_Table);
                     isNewEntry = true;
                 }
                 else
                 {
-                    // Update CID and Access Time for existing assets
                     query = String.Format(
-                        "UPDATE {0} SET \"ipfs_cid\" = :cid, \"access_time\" = :access_time WHERE \"id\" = :id", 
+                        "UPDATE {0} SET \"ipfs_cid\" = :cid, \"access_time\" = :access_time, \"name\" = :name, \"description\" = :description WHERE \"id\" = :id::uuid",
                         m_Table);
                 }
         
@@ -227,26 +226,27 @@ namespace OpenSim.Data.PGSQL
                     int now = (int)((System.DateTime.Now.Ticks - m_ticksToEpoch) / 10000000);
         
                     // Standard Parameters
-                    cmd.Parameters.Add(m_database.CreateParameter("id", meta.FullID));
-                    cmd.Parameters.Add(m_database.CreateParameter("cid", cid));
-                    cmd.Parameters.Add(m_database.CreateParameter("access_time", now));
+                    cmd.Parameters.AddWithValue("id", meta.ID);
+                    cmd.Parameters.AddWithValue("type", meta.Type);
+                    cmd.Parameters.AddWithValue("hash", hash);
+                    cmd.Parameters.AddWithValue("cid", cid);
+                    cmd.Parameters.AddWithValue("asset_flags", (int)meta.Flags);
+                    cmd.Parameters.AddWithValue("access_time", now);
+                    cmd.Parameters.AddWithValue("name", meta.Name ?? "");
+                    cmd.Parameters.AddWithValue("description", meta.Description ?? "");
         
-                    // Parameters required only for INSERT
                     if (isNewEntry)
                     {
-                        cmd.Parameters.Add(m_database.CreateParameter("type", meta.Type));
-                        cmd.Parameters.Add(m_database.CreateParameter("hash", hash));
-                        cmd.Parameters.Add(m_database.CreateParameter("asset_flags", Convert.ToInt32(meta.Flags)));
-                        cmd.Parameters.Add(m_database.CreateParameter("create_time", now));
+                        cmd.Parameters.AddWithValue("create_time", now);
                     }
         
                     cmd.ExecuteNonQuery();
                 }
-                return isNewEntry;
+                return true;
             }
             catch (Exception e)
             {
-                m_log.ErrorFormat("[PGSQL FSASSETS] Failed to store asset with ID {0}: {1}", meta.ID, e.Message);
+                m_log.ErrorFormat("[FSASSETS]: Store failed: {0}", e.Message);
                 return false;
             }
         }
