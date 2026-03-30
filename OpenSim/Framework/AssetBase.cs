@@ -258,6 +258,8 @@ namespace OpenSim.Framework
         }
     }
 
+    /* modified to include ipfs_cid */
+
     [Serializable]
     public class AssetMetadata
     {
@@ -273,6 +275,7 @@ namespace OpenSim.Framework
         private bool m_temporary;
         private string m_creatorid;
         private AssetFlags m_flags;
+        private string m_ipfs_cid = string.Empty;
 
         public UUID FullID
         {
@@ -375,6 +378,12 @@ namespace OpenSim.Framework
         {
             get { return m_flags; }
             set { m_flags = value; }
+        }
+
+        public string IPFS_CID
+        {
+            get { return m_ipfs_cid; }
+            set { m_ipfs_cid = value; }
         }
     }
 }

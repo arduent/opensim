@@ -592,6 +592,7 @@
       <Reference name="OpenSim.Services.Base"/>
       <Reference name="OpenSim.Services.Connectors"/>
       <Reference name="OpenSim.Data"/>
+      <Reference name="OpenMetaverse.StructuredData"/>
       <Reference name="Nini"/>
       <Reference name="log4net"/>
 
@@ -884,6 +885,7 @@
       <Reference name="OpenSim.Server.Base"/>
       <Reference name="Nini"/>
       <Reference name="log4net"/>
+      <Reference name="System.Net.Http"/>
 
     </Project>
 

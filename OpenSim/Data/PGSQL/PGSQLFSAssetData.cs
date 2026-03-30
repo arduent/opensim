@@ -96,13 +96,17 @@ namespace OpenSim.Data.PGSQL
 
         #region IFSAssetDataPlugin Members
 
+        /* modified for ipfs_cid */
+
         public AssetMetadata Get(string id, out string hash)
         {
             hash = String.Empty;
             AssetMetadata meta = null;
             UUID uuid = new UUID(id);
-
-            string query = String.Format("select \"id\", \"type\", \"hash\", \"create_time\", \"access_time\", \"asset_flags\" from {0} where \"id\" = :id", m_Table);
+        
+            // Added ipfs_cid to the select list
+            string query = String.Format("select \"id\", \"type\", \"hash\", \"ipfs_cid\", \"create_time\", \"access_time\", \"asset_flags\" from {0} where \"id\" = :id", m_Table);
+            
             using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
             using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
             {
@@ -114,6 +118,9 @@ namespace OpenSim.Data.PGSQL
                     {
                         meta = new AssetMetadata();
                         hash = reader["hash"].ToString();
+                        
+                        // meta.Methods["ipfs_cid"] = reader["ipfs_cid"].ToString();
+                        
                         meta.ID = id;
                         meta.FullID = uuid;
                         meta.Name = String.Empty;
@@ -122,13 +129,41 @@ namespace OpenSim.Data.PGSQL
                         meta.ContentType = SLUtil.SLAssetTypeToContentType(meta.Type);
                         meta.CreationDate = Util.ToDateTime(Convert.ToInt32(reader["create_time"]));
                         meta.Flags = (AssetFlags)Convert.ToInt32(reader["asset_flags"]);
+                        meta.IPFS_CID = reader["ipfs_cid"].ToString();
+                        
                         int atime = Convert.ToInt32(reader["access_time"]);
                         UpdateAccessTime(atime, uuid);
                     }
                 }
             }
-
             return meta;
+        }
+
+        public string GetCid(string assetId)
+        {
+            string cid = string.Empty;
+            UUID uuid;
+            if (!UUID.TryParse(assetId, out uuid))
+                return string.Empty;
+        
+            string query = String.Format("SELECT \"ipfs_cid\" FROM {0} WHERE \"id\" = :id LIMIT 1", m_Table);
+        
+            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
+            using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
+            {
+                dbcon.Open();
+                // Use your existing CreateParameter helper to ensure PGSQL compatibility
+                cmd.Parameters.Add(m_database.CreateParameter("id", uuid));
+                
+                using (NpgsqlDataReader reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
+                {
+                    if (reader.Read())
+                    {
+                        cid = reader["ipfs_cid"].ToString();
+                    }
+                }
+            }
+            return cid;
         }
 
         private void UpdateAccessTime(int AccessTime, UUID id)
@@ -150,40 +185,68 @@ namespace OpenSim.Data.PGSQL
             }
         }
 
+        /* mod - add ipfs_cid */
+
         public bool Store(AssetMetadata meta, string hash)
+        {
+            // Call new 3-argument version with an empty CID
+            // This allows the initial Robust 'Store' call to work
+            return Store(meta, hash, string.Empty);
+        }
+
+        public bool Store(AssetMetadata meta, string hash, string cid)
         {
             try
             {
-                bool found = false;
+                bool isNewEntry = false;
                 string oldhash;
                 AssetMetadata existingAsset = Get(meta.ID, out oldhash);
-
-                string query = String.Format("UPDATE {0} SET \"access_time\" = :access_time WHERE \"id\" = :id", m_Table);
+        
+                string query;
                 if (existingAsset == null)
                 {
-                   query = String.Format("insert into {0} (\"id\", \"type\", \"hash\", \"asset_flags\", \"create_time\", \"access_time\") values ( :id, :type, :hash, :asset_flags, :create_time, :access_time)", m_Table);
-                   found = true;
+                    // Full Insert for new assets
+                    query = String.Format(
+                        "INSERT INTO {0} (\"id\", \"type\", \"hash\", \"ipfs_cid\", \"asset_flags\", \"create_time\", \"access_time\") " +
+                        "VALUES (:id, :type, :hash, :cid, :asset_flags, :create_time, :access_time)", 
+                        m_Table);
+                    isNewEntry = true;
                 }
-
+                else
+                {
+                    // Update CID and Access Time for existing assets
+                    query = String.Format(
+                        "UPDATE {0} SET \"ipfs_cid\" = :cid, \"access_time\" = :access_time WHERE \"id\" = :id", 
+                        m_Table);
+                }
+        
                 using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
                 using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
                 {
                     dbcon.Open();
                     int now = (int)((System.DateTime.Now.Ticks - m_ticksToEpoch) / 10000000);
+        
+                    // Standard Parameters
                     cmd.Parameters.Add(m_database.CreateParameter("id", meta.FullID));
-                    cmd.Parameters.Add(m_database.CreateParameter("type", meta.Type));
-                    cmd.Parameters.Add(m_database.CreateParameter("hash", hash));
-                    cmd.Parameters.Add(m_database.CreateParameter("asset_flags", Convert.ToInt32(meta.Flags)));
-                    cmd.Parameters.Add(m_database.CreateParameter("create_time", now));
+                    cmd.Parameters.Add(m_database.CreateParameter("cid", cid));
                     cmd.Parameters.Add(m_database.CreateParameter("access_time", now));
+        
+                    // Parameters required only for INSERT
+                    if (isNewEntry)
+                    {
+                        cmd.Parameters.Add(m_database.CreateParameter("type", meta.Type));
+                        cmd.Parameters.Add(m_database.CreateParameter("hash", hash));
+                        cmd.Parameters.Add(m_database.CreateParameter("asset_flags", Convert.ToInt32(meta.Flags)));
+                        cmd.Parameters.Add(m_database.CreateParameter("create_time", now));
+                    }
+        
                     cmd.ExecuteNonQuery();
                 }
-                return found;
+                return isNewEntry;
             }
-            catch(Exception e)
+            catch (Exception e)
             {
-                m_log.Error("[PGSQL FSASSETS] Failed to store asset with ID " + meta.ID);
-                m_log.Error(e.ToString());
+                m_log.ErrorFormat("[PGSQL FSASSETS] Failed to store asset with ID {0}: {1}", meta.ID, e.Message);
                 return false;
             }
         }

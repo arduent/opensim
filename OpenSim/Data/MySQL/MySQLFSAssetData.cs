@@ -136,6 +136,12 @@ namespace OpenSim.Data.MySQL
 
         #region IFSAssetDataPlugin Members
 
+        public string GetCid(string assetID)
+        {
+            // MySQL doesn't support IPFS CIDs in this grid's configuration
+            return String.Empty;
+        }
+
         public AssetMetadata Get(string id, out string hash)
         {
             hash = String.Empty;
@@ -213,6 +219,12 @@ namespace OpenSim.Data.MySQL
                 }
                 conn.Close();
             }
+        }
+
+	/* for IPFS/PG no cid in MySQL */
+        public bool Store(AssetMetadata metadata, string hash, string cid)
+        {
+		return Store(metadata,hash);
         }
 
         public bool Store(AssetMetadata meta, string hash)

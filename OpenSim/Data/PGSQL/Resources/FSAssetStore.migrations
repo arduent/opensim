@@ -6,9 +6,24 @@ CREATE TABLE fsassets (
   "id" uuid NOT NULL PRIMARY KEY,
   "type" integer NOT NULL,
   "hash" char(64) NOT NULL,
+  "name" varchar(64) NOT NULL DEFAULT '',
+  "description" varchar(64) NOT NULL DEFAULT '',
   "create_time" integer NOT NULL DEFAULT '0',
   "access_time" integer NOT NULL DEFAULT '0',
   "asset_flags" integer NOT NULL DEFAULT '0'
 );
+
+COMMIT;
+
+:VERSION 2
+
+BEGIN TRANSACTION;
+
+-- Add the CID column for IPFS integration
+-- We use VARCHAR(128) to stay flexible for future CIDv1 lengths
+ALTER TABLE fsassets ADD COLUMN "ipfs_cid" varchar(128) NOT NULL DEFAULT '';
+
+-- Create an index for high-speed CID lookups by the regions/assetd.go
+CREATE INDEX idx_fsassets_ipfs_cid ON fsassets(ipfs_cid);
 
 COMMIT;

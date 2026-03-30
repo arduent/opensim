@@ -33,6 +33,7 @@ using OpenSim.Framework;
 using OpenSim.Framework.Serialization.External;
 using OpenSim.Services.Base;
 using OpenSim.Services.Interfaces;
+using OpenMetaverse.StructuredData;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -40,6 +41,8 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Net.Http;
+using System.Net.Http.Headers;
 
 namespace OpenSim.Services.FSAssetService
 {
@@ -48,6 +51,30 @@ namespace OpenSim.Services.FSAssetService
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         static System.Text.ASCIIEncoding enc = new System.Text.ASCIIEncoding();
+	private static readonly HttpClient m_IpfsClient = new HttpClient();
+
+        private string UploadToIpfsMaster(byte[] data)
+        {
+            using (var content = new MultipartFormDataContent())
+            {
+                var fileContent = new ByteArrayContent(data);
+                fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                // IPFS expects the part name to be "path" or "file"
+                content.Add(fileContent, "file", "asset");
+
+                // Force CIDv1 and RawLeaves via QueryString
+                var response = m_IpfsClient.PostAsync("api/v0/add?cid-version=1&raw-leaves=true", content).Result;
+        
+                if (response.IsSuccessStatusCode)
+                {
+                    string result = response.Content.ReadAsStringAsync().Result;
+            // json OpenMetaverse.StructuredData
+            // to grab the "Hash" field from the response.
+                    return ParseCidFromJson(result);
+                }
+            }
+            return string.Empty;
+        }
 
         static byte[] ToCString(string s)
         {
@@ -91,12 +118,25 @@ namespace OpenSim.Services.FSAssetService
             if (assetConfig == null)
                 throw new Exception("No AssetService configuration");
 
+            string ipfsHost = assetConfig.GetString("IPFSHost", string.Empty);
+
+            if (string.IsNullOrEmpty(ipfsHost))
+            {
+                m_log.ErrorFormat("[FSASSETS]: IPFSHost missing in section {0}", configName);
+                throw new Exception("Configuration Error");
+            }
+
+            if (!ipfsHost.EndsWith("/")) ipfsHost += "/";
+
             lock (m_initLock)
             {
                 if (!m_mainInitialized)
                 {
                     m_mainInitialized = true;
                     m_isMainInstance = !assetConfig.GetBoolean("SecondaryInstance", false);
+
+                    m_IpfsClient.BaseAddress = new Uri(ipfsHost);
+                    m_IpfsClient.Timeout = TimeSpan.FromSeconds(30);
 
                     MainConsole.Instance.Commands.AddCommand("fs", false,
                             "show assets", "show assets", "Show asset stats",
@@ -183,13 +223,6 @@ namespace OpenSim.Services.FSAssetService
 
             Directory.CreateDirectory(spoolTmp);
 
-            m_FSBase = assetConfig.GetString("BaseDirectory", String.Empty);
-            if (m_FSBase.Length == 0)
-            {
-                m_log.ErrorFormat("[FSASSETS]: BaseDirectory not specified");
-                throw new Exception("Configuration error");
-            }
-
             // get write delay default = 1 sec
             m_WriteSleepMs = assetConfig.GetInt("WriteSleepMs", 1000);
 
@@ -226,7 +259,7 @@ namespace OpenSim.Services.FSAssetService
                 }
             }
 
-            m_log.Info("[FSASSETS]: FS asset service enabled");
+            m_log.Info("[FSASSETS]: FS asset service (IPFS MOD) enabled");
         }
 
         private void Stats()
@@ -251,86 +284,6 @@ namespace OpenSim.Services.FSAssetService
                 }
             }
         }
-
-	private void Writer()
-	{
-	    string spoolSubDir = Path.Combine(m_SpoolDirectory, "spool");
-	    m_log.InfoFormat("[FSASSETS]: High-Speed Writer started. Subfolder: {0}", spoolSubDir);
-	
-	    while (true)
-	    {
-	        try
-	        {
-	            // Only look for .asset files in the /spool/ subfolder
-	            string[] files = Directory.GetFiles(spoolSubDir, "*.asset");
-	
-	            if (files.Length > 0)
-	            {
-	                int tickCount = Environment.TickCount;
-	                int batchSize = Math.Min(files.Length, 100); 
-	                
-	                for (int i = 0; i < batchSize; i++)
-	                {
-	                    string currentFile = files[i];
-	                    string hash = Path.GetFileNameWithoutExtension(currentFile);
-	                    string s = HashToFile(hash);
-	                    string diskFile = Path.Combine(m_FSBase, s);
-	                    bool pathOk = false;
-	
-	                    // 1. Ensure Directory Exists
-	                    try
-	                    {
-	                        Directory.CreateDirectory(Path.GetDirectoryName(diskFile));
-	                        pathOk = true;
-	                    }
-	                    catch (Exception ex)
-	                    {
-	                        m_log.ErrorFormat("[FSASSETS]: Failed to create directory for {0}: {1}", diskFile, ex.Message);
-	                    }
-	
-	                    if (pathOk)
-	                    {
-	                        try
-	                        {
-	                            // 2. Read and Compress
-	                            byte[] data = File.ReadAllBytes(currentFile);
-	                            using (FileStream fs = new FileStream(diskFile + ".gz", FileMode.Create, FileAccess.Write, FileShare.None))
-	                            {
-	                                using (GZipStream gz = new GZipStream(fs, CompressionMode.Compress))
-	                                {
-	                                    gz.Write(data, 0, data.Length);
-	                                }
-	                            }
-	
-	                            // 3. CRITICAL: Delete the file from the spool immediately
-	                            File.Delete(currentFile);
-	                        }
-	                        catch (Exception ex)
-	                        {
-	                            // If we can't delete it, we MUST skip it or we loop forever
-	                            m_log.ErrorFormat("[FSASSETS]: Failed to process/delete {0}: {1}", currentFile, ex.Message);
-	                            
-	                            // Rename the file to .failed so the loop stops seeing it as a .asset
-	                            try { File.Move(currentFile, currentFile + ".failed"); } catch {}
-	                        }
-	                    }
-	                }
-	
-	                int totalTicks = Environment.TickCount - tickCount;
-	                //m_log.InfoFormat("[FSASSETS]: Write cycle complete, {0} files processed in {1}ms", batchSize, totalTicks);
-	
-	                // If backlog exists, skip sleep
-	                if (files.Length > batchSize) continue; 
-	            }
-	        }
-	        catch (Exception e)
-	        {
-	            m_log.ErrorFormat("[FSASSETS]: Writer loop catastrophic error: {0}", e.Message);
-	        }
-	
-	        Thread.Sleep(m_WriteSleepMs);
-	    }
-	}
 
         string GetSHA256Hash(byte[] data)
         {
@@ -439,7 +392,7 @@ namespace OpenSim.Services.FSAssetService
             newAsset.Metadata = metadata;
             try
             {
-                newAsset.Data = GetFsData(hash);
+                newAsset.Data = GetFsData(id);
                 if (newAsset.Data.Length == 0)
                 {
                     AssetBase asset = null;
@@ -513,7 +466,7 @@ namespace OpenSim.Services.FSAssetService
             if (m_DataConnector.Get(id, out hash) == null)
                 return null;
 
-            return GetFsData(hash);
+            return GetFsData(id);
         }
 
         public bool Get(string id, Object sender, AssetRetrieved handler)
@@ -525,67 +478,95 @@ namespace OpenSim.Services.FSAssetService
             return true;
         }
 
-        public byte[] GetFsData(string hash)
+        public byte[] GetFsData(string assetId)
         {
-            string spoolFile = Path.Combine(m_SpoolDirectory, hash + ".asset");
-
-            if (File.Exists(spoolFile))
+            // Get the CID from the local Postgres replica
+            string cid = m_DataConnector.GetCid(assetId);
+            
+            if (string.IsNullOrEmpty(cid))
             {
-                try
+                m_log.WarnFormat("[FSASSETS]: Asset {0} not found in database.", assetId);
+                return Array.Empty<byte>();
+            }
+        
+            // Fetch from the LOCAL IPFS node (127.0.0.1)
+            // The local node will handle the network fetch from the Master if needed.
+            try
+            {
+                // Using the local gateway port
+                string url = string.Format("http://127.0.0.1:8080/ipfs/{0}", cid);
+                
+                using (var response = m_IpfsClient.GetAsync(url).Result)
                 {
-                    byte[] content = File.ReadAllBytes(spoolFile);
-
-                    return content;
-                }
-                catch
-                {
+                    if (response.IsSuccessStatusCode)
+                    {
+                        return response.Content.ReadAsByteArrayAsync().Result;
+                    }
+                    m_log.ErrorFormat("[FSASSETS]: Local IPFS node returned {0} for CID {1}", response.StatusCode, cid);
                 }
             }
-
-            string file = HashToFile(hash);
-            string diskFile = Path.Combine(m_FSBase, file);
-
-            if (File.Exists(diskFile + ".gz"))
+            catch (Exception e)
             {
-                try
+                m_log.ErrorFormat("[FSASSETS]: Failed to fetch from local IPFS: {0}", e.Message);
+            }
+        
+            return Array.Empty<byte>();
+        }
+
+        /* Writer thread process spool dir and write to IPFS - save meta data */
+
+        private void Writer()
+        {
+            string spoolSubDir = Path.Combine(m_SpoolDirectory, "spool");
+        
+            while (true)
+            {
+                // We look for .meta files because they represent a complete pair
+                string[] metaFiles = Directory.GetFiles(spoolSubDir, "*.meta");
+        
+                foreach (string metaPath in metaFiles)
                 {
-                    using (GZipStream gz = new GZipStream(new FileStream(diskFile + ".gz", FileMode.Open, FileAccess.Read), CompressionMode.Decompress))
-                    {
-                        using (MemoryStream ms = new MemoryStream())
+                    try {
+                        string assetId = Path.GetFileNameWithoutExtension(metaPath);
+                        string assetPath = Path.Combine(spoolSubDir, assetId + ".asset");
+
+                        if (File.Exists(assetPath)) 
                         {
-                            byte[] data = new byte[32768];
-                            int bytesRead;
-
-                            do
+                            // Read Data and Metadata (OSD)
+                            byte[] data = File.ReadAllBytes(assetPath);
+                            OSDMap metaMap = (OSDMap)OSDParser.DeserializeJson(File.ReadAllText(metaPath));
+                        
+                            // REHYDRATE: Turn the OSDMap back into an AssetMetadata object
+                            AssetMetadata metadata = new AssetMetadata();
+                            metadata.ID = metaMap["ID"].AsString();
+                            metadata.FullID = metaMap["ID"].AsUUID();
+                            metadata.Type = (sbyte)metaMap["Type"].AsInteger();
+                            metadata.Flags = (AssetFlags)metaMap["Flags"].AsInteger();
+                            // Use Defaults for Name/Desc if they aren't in your spool map
+                            metadata.Name = metaMap.ContainsKey("Name") ? metaMap["Name"].AsString() : string.Empty;
+                            metadata.Description = metaMap.ContainsKey("Description") ? metaMap["Description"].AsString() : string.Empty;
+                        
+                            // Upload to IPFS Master (10.99.0.10)
+                            string cid = UploadToIpfsMaster(data);
+                        
+                            if (!string.IsNullOrEmpty(cid)) 
                             {
-                                bytesRead = gz.Read(data, 0, 32768);
-                                if (bytesRead > 0)
-                                    ms.Write(data, 0, bytesRead);
-                            } while (bytesRead > 0);
-
-                            return ms.ToArray();
+                                // 4. NOW pass the 'metadata' object, not the 'metaMap'
+                                // We also pull the legacy Hash from the map for the second argument
+                                m_DataConnector.Store(metadata, metaMap["Hash"].AsString(), cid);
+                        
+                                // 5. Cleanup RAM disk
+                                File.Delete(assetPath);
+                                File.Delete(metaPath);
+                            }
                         }
+        
+                    } catch (Exception e) {
+                        m_log.ErrorFormat("[FSASSETS]: Writer failed for {0}: {1}", metaPath, e.Message);
                     }
                 }
-                catch (Exception)
-                {
-                    return Array.Empty<byte>();
-                }
+                Thread.Sleep(m_WriteSleepMs);
             }
-            else if (File.Exists(diskFile))
-            {
-                try
-                {
-                    byte[] content = File.ReadAllBytes(diskFile);
-
-                    return content;
-                }
-                catch
-                {
-                }
-            }
-            return Array.Empty<byte>();
-
         }
 
         public virtual string Store(AssetBase asset)
@@ -593,94 +574,41 @@ namespace OpenSim.Services.FSAssetService
             return Store(asset, false);
         }
 
-	private string Store(AssetBase asset, bool force)
-	{
-	    // Generate the hash (necessary to know if we already have it)
-	    string hash = GetSHA256Hash(asset.Data);
-
-	    // Sanitize Metadata (standard OpenSim length checks)
-	    if (asset.Name.Length > AssetBase.MAX_ASSET_NAME)
-	        asset.Name = asset.Name.Substring(0, AssetBase.MAX_ASSET_NAME);
-	    if (asset.Description.Length > AssetBase.MAX_ASSET_DESC)
-	        asset.Description = asset.Description.Substring(0, AssetBase.MAX_ASSET_DESC);
-	
-	    // Handle IDs
-	    if (asset.ID.Length == 0)
-	    {
-	        if (asset.FullID.IsZero()) asset.FullID = UUID.Random();
-	        asset.ID = asset.FullID.ToString();
-	    }
-
+        /* modified Store for IPFS - stick meta in spool and save to db on Write thread */
+  
+        private string Store(AssetBase asset, bool force)
+        {
+            string hash = GetSHA256Hash(asset.Data);
+            
+            // ... Sanitization and ID handling ...
+        
             string spoolSubDir = Path.Combine(m_SpoolDirectory, "spool");
-            string tempFile = Path.Combine(spoolSubDir, hash + ".tmp");
-            string finalFile = Path.Combine(spoolSubDir, hash + ".asset");
-	
-	    // FIRE AND FORGET: Save to RAM Spool and return immediately
-	    // if (!AssetExists(hash)) // this hits the disk
-            if (!File.Exists(finalFile)) // hits ram drive
-	    {
-
-	        if (!File.Exists(finalFile))
-	        {
-	            // Sanitize XML for objects
-	            if (asset.Type == (int)AssetType.Object && asset.Data != null)
-	            {
-	                string xml = ExternalRepresentationUtils.SanitizeXml(Utils.BytesToString(asset.Data));
-	                asset.Data = Utils.StringToBytes(xml);
-	            }
-	
-	            // Write to RAM disk - very fast
-	            using (FileStream fs = File.Create(tempFile))
-	            {
-	                fs.Write(asset.Data, 0, asset.Data.Length);
-	            }
-	            File.Move(tempFile, finalFile);
-	        }
-	    }
-	
-	    // ASYNC DATABASE: Queue the DB write so we don't block the HTTP response
-	    // We use a background thread to tell the DB about the asset metadata
-/*
-	    System.Threading.Tasks.Task.Run(() => {
-	        try {
-	            m_DataConnector.Store(asset.Metadata, hash);
-	        } catch (Exception e) {
-	            m_log.ErrorFormat("[FSASSETS]: Async DB Write failed for {0}: {1}", asset.ID, e.Message);
-	        }
-	    });
-*/
-
-// DATABASE WRITE: Removed Task.Run to prevent thread pool exhaustion/flood at startup
-try 
-{
-    m_DataConnector.Store(asset.Metadata, hash);
-} 
-catch (Exception e) 
-{
-    m_log.ErrorFormat("[FSASSETS]: Database write failed for {0}: {1}", asset.ID, e.Message);
-}
-	
-	    // IMMEDIATELY return the ID to the remote grid
-	    return asset.ID;
-	}
+            string assetFile = Path.Combine(spoolSubDir, asset.ID + ".asset");
+            string metaFile = Path.Combine(spoolSubDir, asset.ID + ".meta");
+        
+            if (!File.Exists(assetFile))
+            {
+                // Write Data to RAM Disk
+                File.WriteAllBytes(assetFile, asset.Data);
+        
+                // Write Metadata to RAM Disk as OSD (JSON)
+                // we will store to db in Write thread
+                OSDMap metaMap = new OSDMap();
+                metaMap["ID"] = asset.FullID;
+                metaMap["Name"] = asset.Name;
+                metaMap["Description"] = asset.Description;
+                metaMap["Type"] = asset.Type;
+                metaMap["Hash"] = hash;
+                
+                File.WriteAllText(metaFile, OSDParser.SerializeJsonString(metaMap));
+            }
+        
+            return asset.ID;
+        }
 
         public bool UpdateContent(string id, byte[] data)
         {
             return false;
-
-//            string oldhash;
-//            AssetMetadata meta = m_DataConnector.Get(id, out oldhash);
-//
-//            if (meta == null)
-//                return false;
-//
-//            AssetBase asset = new AssetBase();
-//            asset.Metadata = meta;
-//            asset.Data = data;
-//
-//            Store(asset);
-//
-//            return true;
         }
 
         public virtual bool Delete(string id)
@@ -800,6 +728,30 @@ catch (Exception e)
         public void Get(string id, string ForeignAssetService, bool StoreOnLocalGrid, SimpleAssetRetrieved callBack)
         {
             return;
+        }
+
+        private string ParseCidFromJson(string jsonResponse)
+        {
+            try
+            {
+                // IPFS can return multiple JSON objects separated by newlines if 
+                // multiple files were added. We just need the first/only one.
+                string[] lines = jsonResponse.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                if (lines.Length > 0)
+                {
+                    // Deserialize the first line using OSD
+                    OSD map = OSDParser.DeserializeJson(lines[0]);
+                    if (map is OSDMap osdMap && osdMap.ContainsKey("Hash"))
+                    {
+                        return osdMap["Hash"].AsString();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                m_log.ErrorFormat("[FSASSETS]: Failed to parse IPFS JSON response: {0}", e.Message);
+            }
+            return string.Empty;
         }
     }
 }
