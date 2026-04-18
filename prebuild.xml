@@ -882,6 +882,7 @@
       <Reference name="OpenSim.Services.InventoryService"/>
       <Reference name="OpenSim.Services.Connectors"/>
       <Reference name="OpenSim.Data"/>
+      <Reference name="MySql.Data"/>
       <Reference name="OpenSim.Server.Base"/>
       <Reference name="Nini"/>
       <Reference name="log4net"/>

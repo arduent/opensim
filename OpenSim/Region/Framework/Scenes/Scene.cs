@@ -3141,6 +3141,28 @@ namespace OpenSim.Region.Framework.Scenes
             // In practice, the lock (this) in LLUDPServer.AddNewClient() currently lock across all
             // AddNewClient() operations (though not other ops).
             // In the future this can be relieved once locking per agent (not necessarily on AgentCircuitData) is improved.
+
+            /* bail if circuit is null, throwing exception:
+
+
+
+               2026-04-11 09:56:09,593 ERROR [LLUDPSERVER]: UseCircuitCode handling from endpoint 10........:60483, client unknown unknown failed.  Exception Value cannot be null.   at System.Threading.Monitor.ReliableEnter(Object obj, Boolean& lockTaken)
+                   at OpenSim.Region.Framework.Scenes.Scene.AddNewAgent(IClientAPI client, PresenceType type) in /opt/opensim/OpenSim/Region/Framework/Scenes/Scene.cs:line 3144
+                   at OpenSim.Region.ClientStack.LindenUDP.LLClientView.Start() in /opt/opensim/OpenSim/Region/ClientStack/Linden/UDP/LLClientView.cs:line 777
+                   at OpenSim.Region.ClientStack.LindenUDP.LLUDPServer.AddClient(UInt32 circuitCode, UUID agentID, UUID sessionID, IPEndPoint remoteEndPoint, AuthenticateResponse sessionInfo) in /opt/opensim/OpenSim/Region/ClientStack/Linden/UDP/LLUDPServer.cs:line 1739
+                   at OpenSim.Region.ClientStack.LindenUDP.LLUDPServer.HandleUseCircuitCode(Object o) in /opt/opensim/OpenSim/Region/ClientStack/Linden/UDP/LLUDPServer.cs:line 1581
+
+            */
+
+            if (aCircuit == null)
+            {
+                m_log.ErrorFormat(
+                     "[CRITICAL]: Circuit vanished mid-login for {0} ({1}) in region {2}",
+                     client.Name, client.AgentId, RegionInfo.RegionName);
+
+                return null;
+            }
+
             lock (aCircuit)
             {
                 vialogin = (aCircuit.teleportFlags & (uint)(Constants.TeleportFlags.ViaHGLogin | Constants.TeleportFlags.ViaLogin)) != 0;

@@ -199,6 +199,15 @@ namespace OpenSim.Services.HypergridService
                 IConfig messagingConfig = config.Configs["Messaging"];
                 if (messagingConfig is not null)
                     m_messageKey = messagingConfig.GetString("MessageKey", String.Empty);
+
+		/* mod: init LoginFingerprintRecorder */
+
+		IConfig dbConfig = config.Configs["DatabaseService"];
+		string connString = dbConfig?.GetString("ConnectionString", string.Empty);
+		LoginFingerprintRecorder.Init(connString);
+
+		/* end mod */
+
                 m_log.Debug("[GATEKEEPER SERVICE]: Starting...");
             }
         }
@@ -325,6 +334,20 @@ namespace OpenSim.Services.HypergridService
                 aCircuit.firstname, aCircuit.lastname, authURL, aCircuit.AgentID, destination.RegionID,
                 aCircuit.Viewer, aCircuit.Channel, aCircuit.IPAddress, aCircuit.Mac, aCircuit.Id0, (TeleportFlags)aCircuit.teleportFlags,
                 (source == null) ? "Unknown" : string.Format("{0} ({1}){2}", source.RegionName, source.RegionID, (source.RawServerURI == null) ? "" : " @ " + source.ServerURI));
+
+	   /* mod: LoginFingerprintRecorder */
+           _ = System.Threading.Tasks.Task.Run(() =>
+           {
+                LoginFingerprintRecorder.Record(
+                    aCircuit.AgentID.ToString(),
+                    aCircuit.firstname,
+                    aCircuit.lastname,
+                    clientIP,
+                    mac,
+                    id0,
+                    homeURI
+                );
+            });
 
             string curViewer = Util.GetViewerName(aCircuit);
             string curMac = aCircuit.Mac.ToString();
