@@ -6727,7 +6727,14 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
 
         public void llSetObjectName(string name)
         {
-            m_host.Name = name ?? String.Empty;
+            name ??= string.Empty;
+            if(name != m_host.Name)
+            {
+                m_host.Name = name;
+                m_host.ScheduleFullUpdate();
+                if(m_host.ParentGroup != null)
+                    m_host.ParentGroup.HasGroupChanged = true;
+            }
         }
 
         public LSL_String llGetDate()
@@ -8200,7 +8207,8 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
             Quaternion oldrot = part.SitTargetOrientation;
             part.SitTargetPosition = offset;
             part.SitTargetOrientation = rot;
-            part.ParentGroup.HasGroupChanged = oldpos.NotEqual(part.SitTargetPosition) || oldrot.NotEqual(part.SitTargetOrientation);
+            if(oldpos.NotEqual(part.SitTargetPosition) || oldrot.NotEqual(part.SitTargetOrientation))
+                part.ParentGroup.HasGroupChanged = true;
         }
 
         public void llSitTarget(LSL_Vector offset, LSL_Rotation rot)
@@ -10499,7 +10507,13 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
                             try
                             {
                                 string primName = rules.GetStrictStringItem(idx++);
-                                part.Name = primName;
+                                if(primName != part.Name)
+                                {
+                                    part.Name = primName;
+                                    part.ScheduleFullUpdate();
+                                    if(part.ParentGroup is not null)
+                                        part.ParentGroup.HasGroupChanged = true;
+                                }
                             }
                             catch(InvalidCastException)
                             {
@@ -10513,7 +10527,13 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
                             try
                             {
                                 string primDesc = rules.GetStrictStringItem(idx++);
-                                part.Description = primDesc;
+                                if(primDesc != part.Description)
+                                { 
+                                    part.Description = primDesc;
+                                    part.ScheduleFullUpdate();
+                                    if(part.ParentGroup is not null)
+                                        part.ParentGroup.HasGroupChanged = true;
+                                }
                             }
                             catch(InvalidCastException)
                             {
@@ -11414,7 +11434,14 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
 
         public void llSetObjectDesc(string desc)
         {
-            m_host.Description = desc ?? String.Empty;
+            desc ??= string.Empty;
+            if (desc != m_host.Description)
+            {
+                m_host.Description = desc;
+                m_host.ScheduleFullUpdate();
+                if (m_host.ParentGroup is not null)
+                    m_host.ParentGroup.HasGroupChanged = true;
+            }
         }
 
         public LSL_Key llGetCreator()
