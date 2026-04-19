@@ -1792,6 +1792,12 @@ namespace OpenSim.Region.ScriptEngine.Shared.ScriptBase
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LSL_String osGetEnvironmentVariable(string key)
+        {
+            return m_OSSL_Functions.osGetEnvironmentVariable(key);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LSL_String osAESEncrypt(string secret, string plainText)
         {
             return m_OSSL_Functions.osAESEncrypt(secret, plainText);

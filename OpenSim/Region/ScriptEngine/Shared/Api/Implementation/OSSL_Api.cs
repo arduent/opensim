@@ -6588,6 +6588,25 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
             return World.TryGetSceneObjectPart(id, out SceneObjectPart part) ? part.ParentGroup.GetSittingAvatarsCount() : 0;
         }
 
+/* mod: get environment variable */
+
+        public LSL_String osGetEnvironmentVariable(string key)
+        {
+            if(string.IsNullOrEmpty(key))
+                return LSL_String.Empty;
+
+            string? ret = Environment.GetEnvironmentVariable(key);
+            
+            if (!string.IsNullOrEmpty(ret))
+            {
+                return ret;
+            } else {
+                OSSLShoutError("osGetEnvironmentVariable: Failed to get environment variable!");
+                return LSL_String.Empty;
+            }
+            
+        }
+
         public LSL_String osAESEncrypt(string secret, string plainText)
         {
             if(string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(plainText))

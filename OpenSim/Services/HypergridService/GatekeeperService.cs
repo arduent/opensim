@@ -342,10 +342,10 @@ namespace OpenSim.Services.HypergridService
                     aCircuit.AgentID.ToString(),
                     aCircuit.firstname,
                     aCircuit.lastname,
-                    clientIP,
-                    mac,
-                    id0,
-                    homeURI
+                    aCircuit.IPAddress,
+                    aCircuit.Mac,
+                    aCircuit.Id0,
+		    (source == null) ? "Unknown" : string.Format("{0} ({1}){2}", source.RegionName, source.RegionID, (source.RawServerURI == null) ? "" : " @ " + source.ServerURI)
                 );
             });
 

@@ -900,6 +900,8 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api.Interfaces
        LSL_Integer osGetSittingAvatarsCount();
         //ApiDesc Returns the number of avatars seated on a given object (key).
        LSL_Integer osGetSittingAvatarsCount(LSL_Key object_id);
+	//ApiDesc Get System Environment Variable. Returns string.
+	LSL_String osGetEnvironmentVariable(string key);
         //ApiDesc Encrypt a plain text using AES-256-CBC Symmetric Algorithm Key (secret) and a random Initialization Vector (IV). Returns the Hex string of the IV bytes and the Hex string of the encrypted text bytes separated with (:).
         LSL_String osAESEncrypt(string secret, string plainText);
         //ApiDesc Encrypt a plain text using AES-256-CBC Symmetric Algorithm Key (secret) and a custom Initialization Vector (ivString). Returns the Hex string of the IV bytes and the Hex string of the encrypted text bytes separated with (:).

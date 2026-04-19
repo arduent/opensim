@@ -16,15 +16,21 @@ CREATE TABLE user_login_fingerprints (
     KEY idx_ip (ip_address)
 );
 */
-using System.Collections.Generic;
-using OpenSim.Data;
+using System;
+using MySql.Data.MySqlClient;
 
 namespace OpenSim.Services.HypergridService
 {
     public static class LoginFingerprintRecorder
     {
+        private static string _connStr = string.Empty;
+
+        public static void Init(string connStr)
+        {
+            _connStr = connStr ?? string.Empty;
+        }
+
         public static void Record(
-            IGenericData db,
             string agentId,
             string firstName,
             string lastName,
@@ -33,28 +39,36 @@ namespace OpenSim.Services.HypergridService
             string id0,
             string homeUri)
         {
-            if (db == null) return;
+            if (string.IsNullOrEmpty(_connStr))
+                return;
 
-            string sql = @"
-                INSERT INTO user_login_fingerprints
-                (agent_uuid, first_name, last_name, ip_address, mac, id0, home_uri)
-                VALUES (?agent, ?fn, ?ln, ?ip, ?mac, ?id0, ?home)
-            ";
-
-            var parameters = new Dictionary<string, object>
+            try
             {
-                ["?agent"] = agentId,
-                ["?fn"] = firstName,
-                ["?ln"] = lastName,
-                ["?ip"] = ip,
-                ["?mac"] = mac,
-                ["?id0"] = id0,
-                ["?home"] = homeUri
-            };
+                using var conn = new MySqlConnection(_connStr);
+                conn.Open();
 
-            db.ExecuteNonQuery(sql, parameters);
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO user_login_fingerprints
+                    (agent_uuid, first_name, last_name, ip_address, mac, id0, home_uri)
+                    VALUES
+                    (@agent, @fn, @ln, @ip, @mac, @id0, @home)";
+
+                cmd.Parameters.AddWithValue("@agent", agentId);
+                cmd.Parameters.AddWithValue("@fn", firstName);
+                cmd.Parameters.AddWithValue("@ln", lastName);
+                cmd.Parameters.AddWithValue("@ip", ip);
+                cmd.Parameters.AddWithValue("@mac", mac);
+                cmd.Parameters.AddWithValue("@id0", id0);
+                cmd.Parameters.AddWithValue("@home", homeUri);
+
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("[FingerprintRecorder] " + e.Message);
+            }
         }
     }
 }
-
 
