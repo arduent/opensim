@@ -30,3 +30,14 @@ cp /opt/save-bin/zlib.net.dll bin/
 cp /opt/save-bin/Microsoft.Extensions.Logging.Abstractions.dll bin/
 cp /opt/save-bin/netcd.dll bin/
 
+
+delete mode 100644 bin/BouncyCastle.Cryptography.dll
+delete mode 100644 bin/ICSharpCode.SharpZipLib.dll
+delete mode 100644 bin/MailKit.pdb
+delete mode 100644 bin/MimeKit.pdb
+delete mode 100755 bin/PrimMesher.dll
+delete mode 100644 bin/RestSharp.dll
+delete mode 100644 bin/ZstdNet.dll
+delete mode 100644 bin/libzstd.dll
+
+
