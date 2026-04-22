@@ -6595,7 +6595,8 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
             if(string.IsNullOrEmpty(key))
                 return LSL_String.Empty;
 
-            string? ret = Environment.GetEnvironmentVariable(key);
+            //CS8632 nullable warning
+            string ret = Environment.GetEnvironmentVariable(key);
             
             if (!string.IsNullOrEmpty(ret))
             {

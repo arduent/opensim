@@ -5,7 +5,7 @@
       "System.Drawing.EnableUnixSupport": true,
       "System.Globalization.UseNls": true,
       "System.Reflection.Metadata.MetadataUpdater.IsSupported": false,
-      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": true,
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
       "System.Runtime.TieredCompilation.QuickJit": false
   }
 }

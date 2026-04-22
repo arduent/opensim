@@ -41,7 +41,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -57,6 +56,9 @@ using Amib.Threading;
 using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
+//replace BinaryFormatter
+using MessagePack;
+
 
 namespace OpenSim.Framework
 {
@@ -134,6 +136,38 @@ namespace OpenSim.Framework
         public int ActiveThreads;
         public int WaitingCallbacks;
         public int MaxConcurrentWorkItems;
+    }
+
+    /// <summary>
+    /// Replace old BinaryFormatter
+    /// </summary>
+    public static class SafeSerializer
+    {
+        static readonly MessagePackSerializerOptions Options =
+            MessagePackSerializerOptions.Standard
+                .WithResolver(MessagePack.Resolvers.ContractlessStandardResolver.Instance);
+    
+        public static void SerializeToFile<T>(string filename, T obj)
+        {
+            byte[] data = MessagePackSerializer.Serialize(obj, Options);
+            File.WriteAllBytes(filename, data);
+        }
+    
+        public static T DeserializeFromFile<T>(string filename)
+        {
+            byte[] data = File.ReadAllBytes(filename);
+        
+            try
+            {
+                return MessagePackSerializer.Deserialize<T>(data, Options);
+            }
+            catch (MessagePackSerializationException ex)
+            {
+                throw new InvalidDataException(
+                    $"Failed to deserialize MessagePack file '{filename}' as {typeof(T).FullName}.",
+                    ex);
+            }
+        }
     }
 
     /// <summary>
@@ -2433,33 +2467,16 @@ namespace OpenSim.Framework
             }
         }
 
-        public static void SerializeToFile(string filename, Object obj)
+        public static void SerializeToFile<T>(string filename, T obj)
         {
-            var formatter = new BinaryFormatter();
-            try
-            {
-                using Stream stream = new FileStream(filename, FileMode.Create,FileAccess.Write, FileShare.None);
-                formatter.Serialize(stream, obj);
-            }
-            catch (Exception e)
-            {
-                m_log.Error(e.ToString());
-            }
+            byte[] data = MessagePackSerializer.Serialize(obj);
+            File.WriteAllBytes(filename, data);
         }
 
-        public static Object DeserializeFromFile(string filename)
+        public static T DeserializeFromFile<T>(string filename)
         {
-            try
-            {
-                using Stream stream = new FileStream(filename, FileMode.Open,FileAccess.Read, FileShare.None);
-                var formatter = new BinaryFormatter();
-                return formatter.Deserialize(stream);
-            }
-            catch (Exception e)
-            {
-                m_log.Error(e.ToString());
-            }
-            return null;
+            byte[] data = File.ReadAllBytes(filename);
+            return MessagePackSerializer.Deserialize<T>(data);
         }
 
         public static string Compress(string text)

@@ -171,3 +171,5 @@ logger.txt
 # OS / editor
 .DS_Store
 *.swp
+.vimrc
+.viminfo

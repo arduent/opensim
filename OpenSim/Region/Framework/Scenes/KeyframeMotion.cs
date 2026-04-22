@@ -38,10 +38,11 @@ using OpenSim.Framework;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.PhysicsModules.SharedBase;
 using OpenSim.Region.Framework.Scenes.Serialization;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Runtime.Serialization;
 using Timer = System.Timers.Timer;
 using log4net;
+using MessagePack;
+using MessagePack.Resolvers;
+
 
 namespace OpenSim.Region.Framework.Scenes
 {
@@ -177,10 +178,13 @@ namespace OpenSim.Region.Framework.Scenes
         }
     }
 
-    [Serializable]
     public class KeyframeMotion
     {
         //private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
+        private static readonly MessagePackSerializerOptions _mpOptions =
+            MessagePackSerializerOptions.Standard
+                .WithResolver(ContractlessStandardResolver.Instance);
 
         public enum PlayMode : int
         {
@@ -197,7 +201,6 @@ namespace OpenSim.Region.Framework.Scenes
             Rotation = 1
         }
 
-        [Serializable]
         public struct Keyframe
         {
             public Vector3? Position;
@@ -220,21 +223,22 @@ namespace OpenSim.Region.Framework.Scenes
         private Keyframe[] m_keyframes;
 
         // skip timer events.
+	// note: MessagePack doesn't user Serializable and NonSerialized() - use IgnoreMember instead
         //timer.stop doesn't assure there aren't event threads still being fired
-        [NonSerialized()]
+
+        [IgnoreMember]
         private bool m_timerStopped;
 
-        [NonSerialized()]
+        [IgnoreMember]
         private bool m_isCrossing;
 
-        [NonSerialized()]
+        [IgnoreMember]
         private bool m_waitingCrossing;
 
-        // retry position for cross fail
-        [NonSerialized()]
+        [IgnoreMember]
         private Vector3 m_nextPosition;
 
-        [NonSerialized()]
+        [IgnoreMember]
         private SceneObjectGroup m_group;
 
         private PlayMode m_mode = PlayMode.Forward;
@@ -242,14 +246,14 @@ namespace OpenSim.Region.Framework.Scenes
 
         private bool m_running = false;
 
-        [NonSerialized()]
+        [IgnoreMember]
         private bool m_selected = false;
 
         private int m_iterations = 0;
 
         private int m_skipLoops = 0;
 
-        [NonSerialized()]
+        [IgnoreMember]
         private Scene m_scene;
 
         public Scene Scene
@@ -314,8 +318,7 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 using (MemoryStream ms = new MemoryStream(data))
                 {
-                    BinaryFormatter fmt = new BinaryFormatter();
-                    newMotion = (KeyframeMotion)fmt.Deserialize(ms);
+                     newMotion = MessagePackSerializer.Deserialize<KeyframeMotion>(ms, _mpOptions);
                 }
 
                 newMotion.m_group = grp;
@@ -570,9 +573,12 @@ namespace OpenSim.Region.Framework.Scenes
                     k.StartRotation = rot;
                     if (k.Rotation.HasValue)
                     {
+			//CS9193 ref readonly warning
+			Quaternion rotation = k.Rotation.Value;
+
                         if (direction == -1)
-                            k.Rotation = Quaternion.Conjugate(k.Rotation.Value);
-                        k.Rotation = rot * k.Rotation.Value;
+                            rotation = Quaternion.Conjugate(in rotation);
+                        k.Rotation = rot * rotation;
                     }
                     else
                     {
@@ -658,9 +664,9 @@ namespace OpenSim.Region.Framework.Scenes
 
 //        [NonSerialized()] Vector3 m_lastPosUpdate;
 //        [NonSerialized()] Quaternion m_lastRotationUpdate;
-        [NonSerialized()] Vector3 m_currentVel;
+        [IgnoreMember] Vector3 m_currentVel;
 //        [NonSerialized()] int m_skippedUpdates;
-        [NonSerialized()] double m_lasttickMS;
+        [IgnoreMember] double m_lasttickMS;
 
         private void DoOnTimer(double tickDuration)
         {
@@ -829,22 +835,25 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 timerWasStopped = m_timerStopped;
             }
+        
             StopTimer();
-
+        
             SceneObjectGroup tmp = m_group;
             m_group = null;
-
-            using (MemoryStream ms = new MemoryStream())
+        
+            try
             {
-                BinaryFormatter fmt = new BinaryFormatter();
                 if (!m_selected && tmp != null)
                     m_serializedPosition = tmp.AbsolutePosition;
-                fmt.Serialize(ms, this);
+        
+                return MessagePackSerializer.Serialize(this, _mpOptions);
+            }
+            finally
+            {
                 m_group = tmp;
+        
                 if (!timerWasStopped && m_running && !m_waitingCrossing)
                     StartTimer();
-
-                return ms.ToArray();
             }
         }
 

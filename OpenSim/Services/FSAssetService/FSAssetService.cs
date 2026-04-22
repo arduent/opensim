@@ -488,26 +488,26 @@ namespace OpenSim.Services.FSAssetService
                 m_log.WarnFormat("[FSASSETS]: Asset {0} not found in database.", assetId);
                 return Array.Empty<byte>();
             }
-        
-            // Fetch from the LOCAL IPFS node (127.0.0.1)
-            // The local node will handle the network fetch from the Master if needed.
+
             try
             {
-                // Using the local gateway port
-                string url = string.Format("http://127.0.0.1:8080/ipfs/{0}", cid);
-                
-                using (var response = m_IpfsClient.GetAsync(url).Result)
+                // Use configured IPFS API endpoint
+
+		string url = $"api/v0/cat?arg={cid}";
+            
+                using (var response = m_IpfsClient.PostAsync(url, null).Result)
                 {
                     if (response.IsSuccessStatusCode)
                     {
                         return response.Content.ReadAsByteArrayAsync().Result;
                     }
-                    m_log.ErrorFormat("[FSASSETS]: Local IPFS node returned {0} for CID {1}", response.StatusCode, cid);
+            
+                    m_log.ErrorFormat("[FSASSETS]: IPFS API returned {0} for CID {1}", response.StatusCode, cid);
                 }
             }
             catch (Exception e)
             {
-                m_log.ErrorFormat("[FSASSETS]: Failed to fetch from local IPFS: {0}", e.Message);
+                m_log.ErrorFormat("[FSASSETS]: Failed to fetch from IPFS API: {0}", e.Message);
             }
         
             return Array.Empty<byte>();

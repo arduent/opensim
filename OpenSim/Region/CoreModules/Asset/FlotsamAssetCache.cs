@@ -29,7 +29,6 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Threading;
 using System.Timers;
@@ -44,6 +43,7 @@ using OpenSim.Region.Framework.Scenes;
 using OpenSim.Server.Base;
 using OpenSim.Services.Interfaces;
 using System.Runtime.InteropServices;
+using MessagePack;
 
 
 namespace OpenSim.Region.CoreModules.Asset
@@ -526,8 +526,7 @@ namespace OpenSim.Region.CoreModules.Asset
                 if (stream.Length == 0) // Empty file will trigger exception below
                     return null;
 
-                BinaryFormatter bformatter = new();
-                asset = (AssetBase)bformatter.Deserialize(stream);
+		asset = MessagePackSerializer.Deserialize<AssetBase>(stream);
 
                 m_DiskHits++;
             }
@@ -1012,8 +1011,8 @@ namespace OpenSim.Region.CoreModules.Asset
 
                     using (Stream stream = File.Open(tempname, FileMode.Create))
                     {
-                        BinaryFormatter bformatter = new();
-                        bformatter.Serialize(stream, asset);
+			var bytes = MessagePackSerializer.Serialize(asset);
+			stream.Write(bytes, 0, bytes.Length);
                         stream.Flush();
                     }
                     m_lastFileAccessTimeChange?.Add(filename, 900000);

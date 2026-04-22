@@ -1007,7 +1007,10 @@ namespace OpenSim.Region.ClientStack.Linden
                         // Fix first link number
                         grp.RootPart.LinkNum++;
 
-                        Quaternion rootRotConj = Quaternion.Conjugate(rotations[0]);
+			//CS9193 warning
+			Quaternion rootRot = rotations[0];
+			Quaternion rootRotConj = Quaternion.Conjugate(in rootRot);
+
                         Quaternion tmprot;
                         Vector3 offset;
 

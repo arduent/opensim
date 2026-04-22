@@ -1,0 +1,32 @@
+# cp *.dll /opt/save-bin/
+# cp *.pdb /opt/save-bin/
+# cp *.exe.config /opt/save-bin/
+# cp *.dll.config /opt/save-bin/
+
+cp /opt/save-bin/prebuild.dll bin/
+cp /opt/save-bin/*.json bin/
+cp /opt/save-bin/OpenMetaverse* /opt/opensim/bin/
+cp /opt/save-bin/log4net.dll bin/
+cp /opt/save-bin/Nini.dll bin/
+cp /opt/save-bin/LukeSkywalker.IPNetwork.dll bin/
+cp /opt/save-bin/Nini.dll bin/
+cp /opt/save-bin/Mono.* bin/
+cp /opt/save-bin/XMLRPC.dll bin/
+cp /opt/save-bin/Newtonsoft.Json.dll bin/
+cp /opt/save-bin/System.* bin/
+cp /opt/save-bin/MySql.Data.dll bin/
+cp /opt/save-bin/Npgsql.dll bin/
+cp /opt/save-bin/DotNetOpenId.dll bin/
+cp /opt/save-bin/nunit.framework.dll bin/
+cp /opt/save-bin/CSJ2K.dll bin/
+cp /opt/save-bin/C5.dll bin/
+cp /opt/save-bin/NDesk.Options.dll bin/
+cp /opt/save-bin/BulletXNA.dll bin/
+cp /opt/save-bin/MailKit.dll bin/
+cp /opt/save-bin/Ionic.Zip.dll bin/
+cp /opt/save-bin/MimeKit.dll bin/
+cp /opt/save-bin/Warp3D.dll bin/
+cp /opt/save-bin/zlib.net.dll bin/
+cp /opt/save-bin/Microsoft.Extensions.Logging.Abstractions.dll bin/
+cp /opt/save-bin/netcd.dll bin/
+

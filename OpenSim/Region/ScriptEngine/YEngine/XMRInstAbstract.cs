@@ -1689,28 +1689,15 @@ namespace OpenSim.Region.ScriptEngine.Yengine
                 mow.Write((byte)Ser.SDTCLOBJ);
                 XMRSDTypeClObjgraph.Capture(this.SendObjValue);
             }
-            else if(graph is ScriptThrownException ScriptThrownExceptiongraph)
+            else if (graph is ScriptThrownException)
             {
-                MemoryStream memoryStream = new MemoryStream();
-                System.Runtime.Serialization.Formatters.Binary.BinaryFormatter bformatter =
-                        new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
-                bformatter.Serialize(memoryStream, graph);
-                byte[] rawBytes = memoryStream.ToArray();
-                mow.Write((byte)Ser.THROWNEX);
-                mow.Write((int)rawBytes.Length);
-                mow.Write(rawBytes);
-                SendObjValue(ScriptThrownExceptiongraph.thrown);
+                throw new InvalidOperationException(
+                        "ScriptThrownException is not supported by strict script-state serialization.");
             }
             else
             {
-                MemoryStream memoryStream = new MemoryStream();
-                System.Runtime.Serialization.Formatters.Binary.BinaryFormatter bformatter =
-                        new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
-                bformatter.Serialize(memoryStream, graph);
-                byte[] rawBytes = memoryStream.ToArray();
-                mow.Write((byte)Ser.SYSERIAL);
-                mow.Write(rawBytes.Length);
-                mow.Write(rawBytes);
+                throw new InvalidOperationException(
+                    $"Unsupported type in script serialization: {graph.GetType().FullName}");
             }
         }
 
@@ -1969,27 +1956,14 @@ namespace OpenSim.Region.ScriptEngine.Yengine
 
                 case Ser.SYSERIAL:
                 {
-                    int rawLength = mir.ReadInt32();
-                    byte[] rawBytes = mir.ReadBytes(rawLength);
-                    MemoryStream memoryStream = new MemoryStream(rawBytes);
-                    System.Runtime.Serialization.Formatters.Binary.BinaryFormatter bformatter =
-                            new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
-                    object graph = bformatter.Deserialize(memoryStream);
-                    this.migrateInObjects.Add(ident, graph);
-                    return graph;
+                    throw new InvalidOperationException(
+                        "Legacy BinaryFormatter SYSERIAL data is no longer supported.");
                 }
 
                 case Ser.THROWNEX:
                 {
-                    int rawLength = mir.ReadInt32();
-                    byte[] rawBytes = mir.ReadBytes(rawLength);
-                    MemoryStream memoryStream = new MemoryStream(rawBytes);
-                    System.Runtime.Serialization.Formatters.Binary.BinaryFormatter bformatter =
-                            new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
-                    object graph = bformatter.Deserialize(memoryStream);
-                    this.migrateInObjects.Add(ident, graph);
-                    ((ScriptThrownException)graph).thrown = RecvObjValue();
-                    return graph;
+                    throw new InvalidOperationException(
+                        "Legacy BinaryFormatter THROWNEX data is no longer supported.");
                 }
 
                 default:

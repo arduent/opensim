@@ -886,7 +886,6 @@
       <Reference name="OpenSim.Server.Base"/>
       <Reference name="Nini"/>
       <Reference name="log4net"/>
-      <Reference name="System.Net.Http"/>
 
     </Project>
 
@@ -1995,50 +1994,6 @@
 
 
     <!-- Tools -->
-
-    <Project name="pCampBot" path="OpenSim/Tools/pCampBot" type="Exe">
-      <Configuration name="Debug">
-        <Options>
-          <OutputPath>../../../bin/</OutputPath>
-          <OutputType>Exe</OutputType>
-        </Options>
-      </Configuration>
-      <Configuration name="Release">
-        <Options>
-          <OutputPath>../../../bin/</OutputPath>
-          <OutputType>Exe</OutputType>
-        </Options>
-      </Configuration>
-
-      <ReferencePath>../../../bin/</ReferencePath>
-      <Reference name="OpenMetaverseTypes"/>
-      <Reference name="OpenMetaverse"/>
-      <Reference name="OpenSim.Framework"/>
-      <Reference name="OpenSim.Framework.Console"/>
-      <Reference name="OpenSim.Framework.Monitoring"/>
-      <Reference name="Nini"/>
-      <Reference name="log4net"/>
-
-    </Project>
-
-    <Project name="OpenSim.Tools.Configger" path="OpenSim/Tools/Configger" type="Exe">
-      <Configuration name="Debug">
-        <Options>
-          <OutputPath>../../../bin/</OutputPath>
-        </Options>
-      </Configuration>
-      <Configuration name="Release">
-        <Options>
-          <OutputPath>../../../bin/</OutputPath>
-        </Options>
-      </Configuration>
-
-      <ReferencePath>../../../bin/</ReferencePath>
-      <Reference name="OpenSim.Framework"/>
-      <Reference name="Nini"/>
-      <Reference name="log4net"/>
-
-    </Project>
 
     <Project
             name="WebRtcVoice"
